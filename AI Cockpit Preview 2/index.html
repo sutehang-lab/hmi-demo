@@ -372,6 +372,22 @@
         }
         .canvas.state-2 #divider-touch-zone { display: block; }
 
+        /* Mid-window Divider Handle */
+        #mid-widget {
+            position: absolute;
+            left: 1905px; /* state A: 11px from right edge (1920 - 11 - 4) */
+            top: 497px;   /* vertically centered: center 528 - half of 62 */
+            width: 4px;
+            height: 62px;
+            border-radius: 2px;
+            background: rgba(0, 0, 0, 0.22);
+            pointer-events: none;
+            z-index: 30;
+            transition: left 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        .canvas.state-2 #mid-widget { left: 642px; } /* gap center snap */
+        .canvas.state-c #mid-widget { left: 11px; }  /* 11px from left edge */
+
         /* --- STATE C CSS (全屏地图) --- */
         .canvas.state-c .map-window {
             top: 0; left: 0; width: 1920px; height: 1080px;
@@ -771,6 +787,18 @@
 .weather-text, .good-morning, .control-l, .control-r {
     pointer-events: none;
 }
+
+/* 布局循环按钮 — 透明覆盖在 dock 左下角圆形上 */
+#layout-cycle-btn {
+    position: absolute;
+    bottom: 12px;
+    left: 16px;
+    width: 72px;
+    height: 60px;
+    cursor: pointer;
+    z-index: 1002;
+    border-radius: 14px;
+}
     </style>
     <!-- 加载 React 相关库的 CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -811,6 +839,9 @@
     <!-- Divider Touch Zone -->
     <div id="divider-touch-zone"></div>
 
+    <!-- Divider Handle — always visible, tracks gap between windows -->
+    <div id="mid-widget"></div>
+
     <!-- Car Scene -->
 <div class="scene-container" id="three-js-canvas-container">
     <canvas id="three-canvas"></canvas> <img src="assets/images/weather.png" alt="Weather" class="weather-text">
@@ -837,6 +868,8 @@
     </div>
     <img src="assets/images/status.png" alt="Status Bar" class="status-bar">
     <img src="assets/images/dock.png" alt="Dock" class="dock">
+    <!-- 布局循环按钮：覆盖在 dock 左下角的圆形上 -->
+    <div id="layout-cycle-btn" title="切换布局"></div>
 </div>
 
 <!-- WORKSPACE SIDEBAR -->
@@ -1052,10 +1085,43 @@ toggleBtn.addEventListener('click', () => {
     window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: canvas.classList.contains('state-2') ? 'center' : 'state-a' } }));
 });
 
+// 布局循环按钮：全场景 → 右1/3 → 左1/3 → 地图全屏 → 循环
+const layoutCycleBtn = document.getElementById('layout-cycle-btn');
+const _snapCycleOrder = ['state-a', 'right', 'center', 'state-c'];
+let _snapCycleIdx = 0;
+
+layoutCycleBtn.addEventListener('click', () => {
+    _snapCycleIdx = (_snapCycleIdx + 1) % _snapCycleOrder.length;
+    const next = _snapCycleOrder[_snapCycleIdx];
+    if (next === 'state-a') {
+        enterStateA();
+    } else if (next === 'state-c') {
+        enterStateC();
+    } else if (next === 'center') {
+        canvas.classList.remove('state-c');
+        canvas.classList.add('state-2');
+        requestAnimationFrame(clearGestureStyles);
+        window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'center' } }));
+    } else if (next === 'right') {
+        canvas.classList.remove('state-c');
+        canvas.classList.add('state-2');
+        applySnap(SNAP_R_SCENE_W, SNAP_R_MAP_L, SNAP_R_MAP_W, SNAP_R_DIV_L);
+        window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'right' } }));
+    }
+});
+
+// 拖拽手势改变状态时同步 index，确保循环按钮从当前状态继续
+window.addEventListener('app-state-change', (e) => {
+    const snap = e.detail && e.detail.snap;
+    const idx = _snapCycleOrder.indexOf(snap);
+    if (idx >= 0) _snapCycleIdx = idx;
+});
+
     // 手势交互（同时支持鼠标和触摸）
     // 状态A（全屏车模）↔ 状态B（分屏）↔ 状态C（全屏地图）
     // 分屏内五档吸附：状态C | 左1/3 | 默认 | 右1/3 | 状态A
     const dividerZone = document.getElementById('divider-touch-zone');
+    const midWidget   = document.getElementById('mid-widget');
     const sceneContainer_gesture = document.getElementById('three-js-canvas-container');
     const mapWindow = document.querySelector('.map-window');
     let _dragMode = null; // null | 'right-edge' | 'left-edge' | 'divider'
@@ -1078,6 +1144,8 @@ toggleBtn.addEventListener('click', () => {
         mapWindow.style.left = '';
         mapWindow.style.width = '';
         dividerZone.style.left = '';
+        midWidget.style.left = '';
+        midWidget.style.transition = '';
     }
 
     // 辅助：进入状态C
@@ -1103,6 +1171,8 @@ toggleBtn.addEventListener('click', () => {
             mapWindow.style.left      = ml != null ? ml + 'px' : '';
             mapWindow.style.width     = mw != null ? mw + 'px' : '';
             dividerZone.style.left    = dl != null ? dl + 'px' : '';
+            midWidget.style.transition = '';
+            midWidget.style.left      = dl != null ? (dl + 38) + 'px' : '';
         });
     }
 
@@ -1150,6 +1220,8 @@ toggleBtn.addEventListener('click', () => {
             mapWindow.style.left = '1920px';
             mapWindow.style.width = '0px';
             dividerZone.style.left = '1868px';
+            midWidget.style.transition = 'none';
+            midWidget.style.left = '1906px'; /* 1872 + 34 */
 
             // 200ms 后：结束动画（transition:none 阻断 CSS 基础 transition）
             _rightEdgeTimer = setTimeout(() => {
@@ -1174,6 +1246,8 @@ toggleBtn.addEventListener('click', () => {
             sceneContainer_gesture.style.transition = 'none';
             sceneContainer_gesture.style.width = '0px';
             dividerZone.style.left = '-4px';
+            midWidget.style.transition = 'none';
+            midWidget.style.left = '11px'; /* stays at state-c edge until user drags */
 
             // 地图：最大窗口宽度（左右各留 24px），窗口化属性 200ms 动画（含 width，X/Y 同步）
             mapWindow.style.transition = 'top 200ms ease-out, left 200ms ease-out, width 200ms ease-out, height 200ms ease-out, border-radius 200ms ease-out, box-shadow 200ms ease-out';
@@ -1194,6 +1268,7 @@ toggleBtn.addEventListener('click', () => {
         e.preventDefault();
         sceneContainer_gesture.style.transition = 'none';
         mapWindow.style.transition = 'none';
+        midWidget.style.transition = 'none';
         // Keep current map width instead of resetting to CSS default
         const currentSceneW = parseFloat(sceneContainer_gesture.style.width) || sceneContainer_gesture.offsetWidth;
         const mapLeft = currentSceneW + 48;
@@ -1212,6 +1287,7 @@ toggleBtn.addEventListener('click', () => {
             const sceneWidth = Math.max(10, Math.min(1872, pointerX - 36));
             sceneContainer_gesture.style.width = sceneWidth + 'px';
             dividerZone.style.left = (sceneWidth - 4) + 'px';
+            midWidget.style.left   = (sceneWidth + 34) + 'px';
             const mapLeft = sceneWidth + 48;
             const mapWidth = 1920 - mapLeft - 24;
             if (mapWidth > 0) {
@@ -1231,12 +1307,14 @@ toggleBtn.addEventListener('click', () => {
                 mapWindow.style.left = mapLeft + 'px';
                 mapWindow.style.width = mapWidth + 'px';
                 dividerZone.style.left = (sceneWidth - 4) + 'px';
+                midWidget.style.left   = (sceneWidth + 34) + 'px';
             } else if (sceneWidth <= 0) {
                 // 还没拖出足够空间，场景隐藏，地图保持最大
                 sceneContainer_gesture.style.width = '0px';
                 mapWindow.style.left = '24px';
                 mapWindow.style.width = '1872px';
                 dividerZone.style.left = '-4px';
+                midWidget.style.left   = '34px';
             }
         } else {
             // divider 逻辑：地图填满剩余空间
@@ -1246,6 +1324,7 @@ toggleBtn.addEventListener('click', () => {
             mapWindow.style.left = mapLeft + 'px';
             mapWindow.style.width = (1920 - mapLeft - 24) + 'px';
             dividerZone.style.left = (sceneWidth - 4) + 'px';
+            midWidget.style.left   = (sceneWidth + 34) + 'px';
         }
     });
 
@@ -1254,6 +1333,7 @@ toggleBtn.addEventListener('click', () => {
         if (!_dragMode) return;
         const mode = _dragMode;
         _dragMode = null;
+        midWidget.style.transition = ''; /* restore CSS transition for snap animation */
 
         const rect = canvas.getBoundingClientRect();
         const scaleX = 1920 / rect.width;
