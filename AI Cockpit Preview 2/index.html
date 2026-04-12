@@ -23,11 +23,11 @@
         
         .app-wrapper {
             display: flex;
-            width: 2320px;
+            width: 1920px;
             height: 1080px;
             transform-origin: center;
-            /* Auto-scale the whole 2320x1080 wrapper to fit window */
-            transform: scale(min(calc(100vw / 2320), calc(100vh / 1080)));
+            /* Auto-scale the whole 1920x1080 wrapper to fit window */
+            transform: scale(min(calc(100vw / 1920), calc(100vh / 1080)));
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
             border-radius: 12px;
             overflow: hidden;
@@ -872,7 +872,7 @@
     <div id="layout-cycle-btn" title="切换布局"></div>
 </div>
 
-<!-- WORKSPACE SIDEBAR -->
+<!-- WORKSPACE SIDEBAR
 <div class="workspace">
     <div class="workspace-header">
         <h2>全局 / Global</h2>
@@ -1069,7 +1069,64 @@
         <input type="color" id="ctrl-ground-bottom" value="#cdd2d6">
     </div>
 </div>
+-->
 </div> <!-- .app-wrapper end -->
+
+<!-- Hidden control inputs — workspace is commented out but JS still reads these values -->
+<div style="display:none">
+    <button id="save-params-btn"></button>
+    <input type="range" id="ctrl-env-intensity" min="0" max="3" step="0.05" value="1.0">
+    <input type="range" id="ctrl-exposure" min="0.2" max="3" step="0.05" value="0.75">
+    <input type="color" id="ctrl-color" value="#fafcff">
+    <input type="range" id="ctrl-metalness" min="0" max="1" step="0.01" value="0.85">
+    <input type="range" id="ctrl-roughness" min="0" max="1" step="0.01" value="0.21">
+    <input type="range" id="ctrl-clearcoat" min="0" max="1" step="0.01" value="0.53">
+    <input type="range" id="ctrl-ccroughness" min="0" max="1" step="0.01" value="0">
+    <input type="range" id="ctrl-envmap" min="0.1" max="5" step="0.1" value="0.1">
+    <input type="range" id="ctrl-sun-intensity" min="0" max="8" step="0.1" value="4.2">
+    <input type="range" id="ctrl-sun-x" min="-20" max="20" step="0.5" value="20">
+    <input type="range" id="ctrl-sun-y" min="1" max="30" step="0.5" value="9">
+    <input type="range" id="ctrl-rim-intensity" min="0" max="5" step="0.1" value="3.7">
+    <input type="range" id="ctrl-rim-x" min="-20" max="20" step="0.5" value="3.5">
+    <input type="range" id="ctrl-rim-y" min="0" max="20" step="0.5" value="2.5">
+    <input type="range" id="ctrl-glass-env" min="0" max="5" step="0.1" value="4.7">
+    <input type="range" id="ctrl-glass-opacity" min="0" max="1" step="0.01" value="0.72">
+    <input type="range" id="ctrl-glass-roughness" min="0" max="1" step="0.01" value="0.0">
+    <input type="range" id="ctrl-flg-opacity" min="0" max="1" step="0.01" value="0.25">
+    <input type="range" id="ctrl-flg-roughness" min="0" max="1" step="0.01" value="0.05">
+    <input type="color" id="ctrl-flg-emissive" value="#ffffff">
+    <input type="range" id="ctrl-flg-emissive-int" min="0" max="10" step="0.1" value="1.0">
+    <input type="range" id="ctrl-flg-env" min="0" max="10" step="0.1" value="2.0">
+    <input type="range" id="ctrl-rlg-opacity" min="0" max="1" step="0.01" value="0.25">
+    <input type="range" id="ctrl-rlg-roughness" min="0" max="1" step="0.01" value="0.05">
+    <input type="color" id="ctrl-rlg-emissive" value="#ff2020">
+    <input type="range" id="ctrl-rlg-emissive-int" min="0" max="10" step="0.1" value="0">
+    <input type="range" id="ctrl-rlg-env" min="0" max="10" step="0.1" value="2.0">
+    <input type="range" id="ctrl-distance" min="3" max="30" step="0.1" value="11.3">
+    <input type="range" id="ctrl-elevation" min="-2" max="80" step="0.5" value="1.5">
+    <input type="range" id="ctrl-azimuth" min="-180" max="180" step="1" value="126">
+    <input type="range" id="ctrl-focal" min="16" max="200" step="1" value="59">
+    <input type="color" id="ctrl-sky" value="#ffffff">
+    <input type="color" id="ctrl-ground" value="#223344">
+    <input type="range" id="ctrl-hemi" min="0" max="3" step="0.05" value="2.05">
+    <input type="color" id="ctrl-bg" value="#fafdff">
+    <input type="color" id="ctrl-ground-top" value="#ffffff">
+    <input type="color" id="ctrl-ground-bottom" value="#cdd2d6">
+    <span id="val-env-intensity"></span><span id="val-exposure"></span>
+    <span id="val-color"></span><span id="val-metalness"></span><span id="val-roughness"></span>
+    <span id="val-clearcoat"></span><span id="val-ccroughness"></span><span id="val-envmap"></span>
+    <span id="val-sun-intensity"></span><span id="val-sun-x"></span><span id="val-sun-y"></span>
+    <span id="val-rim-intensity"></span><span id="val-rim-x"></span><span id="val-rim-y"></span>
+    <span id="val-glass-env"></span><span id="val-glass-opacity"></span><span id="val-glass-roughness"></span>
+    <span id="val-flg-opacity"></span><span id="val-flg-roughness"></span><span id="val-flg-emissive"></span>
+    <span id="val-flg-emissive-int"></span><span id="val-flg-env"></span>
+    <span id="val-rlg-opacity"></span><span id="val-rlg-roughness"></span><span id="val-rlg-emissive"></span>
+    <span id="val-rlg-emissive-int"></span><span id="val-rlg-env"></span>
+    <span id="val-distance"></span><span id="val-elevation"></span><span id="val-azimuth"></span>
+    <span id="val-focal"></span><span id="val-sky"></span><span id="val-ground"></span>
+    <span id="val-hemi"></span><span id="val-bg"></span>
+    <span id="val-ground-top"></span><span id="val-ground-bottom"></span>
+</div>
 
 <script>
     const canvas = document.getElementById('canvas');
