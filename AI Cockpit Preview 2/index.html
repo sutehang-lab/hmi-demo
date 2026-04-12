@@ -1,0 +1,2670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Cockpit Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000000;
+            overflow: hidden;
+            color: #fff;
+            font-family: sans-serif;
+        }
+        
+        .app-wrapper {
+            display: flex;
+            width: 2320px;
+            height: 1080px;
+            transform-origin: center;
+            /* Auto-scale the whole 2320x1080 wrapper to fit window */
+            transform: scale(min(calc(100vw / 2320), calc(100vh / 1080)));
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .canvas {
+            width: 1920px;
+            height: 1080px;
+            position: relative;
+            background-color: #EEEEEE;
+            overflow: hidden;
+        }
+
+        /* --- Workspace Sidebar --- */
+        .workspace {
+            width: 400px;
+            height: 1080px;
+            background-color: #111;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border-left: 2px solid #333;
+            overflow-y: auto;
+        }
+        .workspace h2 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #00FBFF;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #ccc;
+        }
+        .control-group span {
+            font-family: monospace;
+            color: #fff;
+        }
+        .control-group input[type="range"] {
+            width: 100%;
+            accent-color: #00FBFF;
+        }
+        .control-group input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: none;
+        }
+        .workspace-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .workspace-header h2 { margin-bottom: 0; }
+        .save-btn {
+            background: #00FBFF;
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            transition: opacity 0.2s;
+        }
+        .save-btn:hover { opacity: 0.8; }
+        .save-btn:active { opacity: 0.6; }
+
+        /* Toggle Button */
+        .toggle-btn {
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            width: 30px;
+            height: 30px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 9999;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            transition: background-color 0.3s;
+        }
+        .toggle-btn:hover {
+            background-color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            position: absolute;
+            top: 10px;
+            left: 24px;
+            width: calc(100% - 48px);
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .dock {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 1920px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        /* Map Window (Right Window) */
+        .map-window {
+            position: absolute;
+            top: 72px; /* Guessing to vertically center with dock */
+            left: 1944px; /* 1920 + 24 gap */
+            width: 1240px;
+            height: 912px;
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 1;
+            border-radius: 24px;
+            overflow: visible; /* Changed from hidden to show box-shadow aura */
+            pointer-events: none;
+        }
+
+        /* --- GLOW EFFECTS STRUCTURE --- */
+        
+        /* Containers expand outwards to provide unclipped space for the blur */
+        .glow-container {
+            position: absolute;
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .canvas.state-2 .glow-container {
+            opacity: 1;
+        }
+
+        /* The mask element that defines the exact shape of the ring */
+        .glow-mask {
+            position: absolute;
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+            overflow: hidden;
+        }
+
+        /* The giant spinning gradient inside the mask */
+        .glow-spinner {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            width: 100%;
+            height: 200%;
+            /* 替换为与胶囊光晕一致的红橙黄渐变色系 */
+            background: linear-gradient(
+                to bottom,
+                rgba(255, 90, 95, 1) 0%,   /* #FF5A5F */
+                rgba(255, 145, 0, 1) 12.5%, /* #FF9100 */
+                rgba(255, 245, 157, 1) 25%, /* #FFF59D */
+                rgba(255, 145, 0, 1) 37.5%, /* #FF9100 */
+                rgba(255, 90, 95, 1) 50%,   /* #FF5A5F */
+                /* 下半部分完全重复，保证平滑衔接 */
+                rgba(255, 145, 0, 1) 62.5%,
+                rgba(255, 245, 157, 1) 75%,
+                rgba(255, 145, 0, 1) 87.5%,
+                rgba(255, 90, 95, 1) 100%
+            );
+            /* Speed up 300%: from 4s to 1.33s */
+            animation: sweepGlow 1.33s linear infinite;
+        }
+
+        @keyframes sweepGlow {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(50%); }
+        }
+
+        /* Container for the huge soft aura */
+        .glow-aura-outer {
+            position: absolute;
+            inset: -2px; 
+            border-radius: 26px;
+            z-index: -3;
+            padding: 8px; /* Slightly thicker for wide spread */
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask-composite: exclude;
+            opacity: 0;
+            transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            pointer-events: none;
+            filter: blur(24px); 
+        }
+
+        .canvas.state-2 .glow-border,
+        .canvas.state-2 .glow-aura {
+            opacity: 1;
+        }
+        
+        .canvas.state-2 .glow-aura-outer {
+            opacity: 0.8; /* Make the massive outer blur slightly softer */
+        }
+
+        /* --- PARTICLE MATRIX CSS --- */
+        @keyframes matrixPulse {
+            0% { transform: scale(0); opacity: 0; }
+            10% { transform: scale(var(--max-scale, 0.95)); opacity: 1; }
+            85% { opacity: 1; }
+            100% { transform: scale(0); opacity: 0; }
+        }
+
+        .particle-pulse {
+            animation-name: matrixPulse;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+            transform-origin: center center;
+            will-change: transform, opacity; 
+        }
+
+        .map-bg {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 24px; /* Move border-radius here since overflow is visible on parent */
+            background-color: #EEEEEE; /* Provide background just in case */
+        }
+
+        /* Scene Container (Left Window) */
+        .scene-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1920px;
+            height: 1080px;
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 10;
+            border-radius: 0;
+            overflow: hidden;
+        }
+        .scene-bg {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        /* State 1 Elements */
+        .weather-text {
+            position: absolute;
+            top: 100px;
+            left: 80px;
+            z-index: 20;
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        .good-morning {
+            position: absolute;
+            top: 180px;
+            left: 80px;
+            z-index: 20;
+            transition: opacity 0.4s ease-in-out;
+        }
+
+        /* Control Panel Elements (Inside Left Window) */
+        .control-l, .control-r {
+            position: absolute;
+            z-index: 20;
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        /* State 1: Spread out in the full 1920x1080 scene */
+        .control-l {
+            bottom: 136px;
+            left: 80px;
+        }
+
+        .control-r {
+            bottom: 136px;
+            right: 80px;
+        }
+
+        /* --- STATE 2 CSS --- */
+        .canvas.state-2 .map-window {
+            left: 656px;
+            pointer-events: auto;
+        }
+        .canvas.state-2 .scene-container {
+            top: 72px; /* Based on 912 height and 1080 total height */
+            left: 24px;
+            width: 608px; 
+            height: 912px; 
+            border-radius: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .canvas.state-2 .weather-text {
+            top: 40px;
+            left: 40px;
+            transform: scale(0.8);
+            transform-origin: top left;
+        }
+        .canvas.state-2 .good-morning {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .canvas.state-2 .control-l {
+            bottom: 40px;
+            left: 40px;
+        }
+        .canvas.state-2 .control-r {
+            bottom: 40px;
+            right: 40px;
+            left: auto;
+        }
+
+        /* Window Divider — rides inside map-window at its left edge */
+        #divider-touch-zone {
+            position: absolute;
+            top: 72px;
+            left: 604px;
+            width: 56px;
+            height: 912px;
+            z-index: 30;
+            cursor: col-resize;
+            display: none;
+            touch-action: none;
+        }
+        .canvas.state-2 #divider-touch-zone { display: block; }
+
+        /* --- STATE C CSS (全屏地图) --- */
+        .canvas.state-c .map-window {
+            top: 0; left: 0; width: 1920px; height: 1080px;
+            border-radius: 0; pointer-events: auto;
+        }
+        .canvas.state-c .map-bg { border-radius: 0; }
+        .canvas.state-c .scene-container {
+            width: 0; opacity: 0; pointer-events: none; overflow: hidden;
+        }
+        .canvas.state-c .weather-text,
+        .canvas.state-c .good-morning,
+        .canvas.state-c .control-l,
+        .canvas.state-c .control-r { opacity: 0; pointer-events: none; }
+        .canvas.state-c #divider-touch-zone { display: none; }
+
+        /* AI Avatar - Center of Status Bar */
+        .ai-avatar {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 44px;
+            height: 44px;
+            background: radial-gradient(circle at 35% 35%, #4a4a4a 0%, #1a1a1a 100%);
+            border-radius: 50%;
+            z-index: 1001;
+            box-shadow: 
+                inset -2px -2px 5px rgba(0,0,0,0.8),
+                inset 2px 2px 5px rgba(255,255,255,0.1),
+                0 4px 10px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .ai-avatar:hover {
+            box-shadow: 
+                inset -2px -2px 5px rgba(0,0,0,0.8),
+                inset 2px 2px 5px rgba(255,255,255,0.2),
+                0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        /* --- AI Avatar & Island CSS --- */
+        .ai-island-container {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            /* Do not use translateX here, let children manage their own center */
+            width: 0; 
+            height: 0;
+            z-index: 1001;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* The colorful glow behind the expanded island */
+        .ai-aura {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            /* Fixed offset: moved slightly down (Y: -30%) instead of centered (-50%) to match image 1 */
+            transform: translate(-50%, -30%);
+            width: 60px; /* Start small */
+            height: 60px;
+            border-radius: 60px;
+            /* Changed to diagonal gradient: top-left to bottom-right */
+            background: linear-gradient(135deg, #FF5A5F, #FF9100, #FFF59D, #FF9100, #FF5A5F);
+            background-size: 300% 300%;
+            filter: blur(35px); /* Increased blur for a softer bleed */
+            opacity: 0;
+            /* When collapsing: fade out immediately (no delay) */
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease 0s; 
+            pointer-events: none;
+            z-index: -1;
+            will-change: transform, width, height, opacity, background-position;
+        }
+
+        /* AI Avatar - Center of Status Bar */
+        .ai-avatar {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translate(-50%, 0); /* Center exactly on the container's 0,0 point */
+            width: 48px;
+            height: 48px;
+            background: radial-gradient(circle at 35% 35%, #4a4a4a 0%, #1a1a1a 100%);
+            border-radius: 60px; /* Use large fixed border-radius instead of 50% for capsule stretch */
+            box-shadow: 
+                inset -2px -2px 5px rgba(0,0,0,0.8),
+                inset 2px 2px 5px rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Sped up 2x */
+            perspective: 500px;
+            transform-style: preserve-3d;
+            overflow: hidden;
+            will-change: width, height, transform, border-radius;
+        }
+
+        /* Inner bottom glow for capsule (starts invisible) */
+        .ai-inner-glow {
+            position: absolute;
+            bottom: -20px;
+            left: 10%;
+            width: 80%;
+            height: 40px;
+            /* Match the diagonal gradient */
+            background: linear-gradient(135deg, #FF5A5F, #FF9100, #FF5A5F);
+            background-size: 300% 300%;
+            filter: blur(15px);
+            opacity: 0;
+            transition: opacity 0.3s ease; /* Sped up 2x */
+            pointer-events: none;
+            z-index: 0;
+            will-change: opacity, background-position;
+        }
+
+        .ai-eyes-container {
+            display: flex;
+            gap: 6px;
+            transition: all 0.3s ease; /* Sped up 2x */
+            will-change: gap;
+        }
+
+        .ai-text {
+            position: absolute;
+            left: 32px;
+            color: #FFFFFF;
+            font-family: 'Arial', sans-serif;
+            font-size: 18px;
+            font-weight: 400;
+            opacity: 0;
+            white-space: nowrap;
+            transition: opacity 0.15s ease; /* Sped up 2x */
+            pointer-events: none;
+            will-change: opacity, font-size;
+        }
+
+        .ai-eye {
+            width: 12px;
+            height: 18px;
+            background: linear-gradient(to bottom, #00FBFF 0%, rgba(0, 251, 255, 0.4) 100%);
+            border-radius: 6px;
+            box-shadow: 0 0 15px rgba(0, 251, 255, 0.8), 0 0 30px rgba(0, 251, 255, 0.4);
+            filter: brightness(1.3);
+            transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Sped up 2x */
+            position: relative;
+            transform-origin: center;
+            will-change: transform, opacity, border-radius, width, height, box-shadow;
+        }
+
+        /* Base Breathing Animation - 仅通过光晕和不透明度呼吸，不再上下拉伸 */
+        .ai-eye {
+            animation: ai-breathe 4s ease-in-out infinite;
+        }
+        .ai-eye-r { animation-delay: 0.2s; }
+
+        @keyframes ai-breathe {
+            0%, 100% { 
+                opacity: 0.7;
+                box-shadow: 0 0 10px rgba(0, 251, 255, 0.6);
+            }
+            50% { 
+                opacity: 1;
+                box-shadow: 0 0 20px rgba(0, 251, 255, 0.9), 0 0 35px rgba(0, 251, 255, 0.5);
+            }
+        }
+
+        /* 眨眼 (Blink) - 极速闭合，减少拉伸感，不再压扁成一线 */
+        .ai-avatar.blink .ai-eye {
+            animation: ai-blink-act 0.15s ease-in-out;
+        }
+        @keyframes ai-blink-act {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.2); } /* Changed from 0.01 to 0.2 to keep it thicker */
+        }
+
+        /* 点头 (Nod) */
+        .ai-avatar.nod {
+            animation: ai-nod-act 0.8s ease-in-out;
+        }
+        @keyframes ai-nod-act {
+            0%, 100% { transform: translateX(-50%) rotateX(0); }
+            40% { transform: translateX(-50%) rotateX(25deg) translateY(4px); }
+        }
+
+        /* 转头 (Turn) - 配合眼睛左右偏移模拟立体转动 */
+        .ai-avatar.turn-l {
+            animation: ai-turn-l-act 1.2s ease-in-out;
+        }
+        .ai-avatar.turn-l .ai-eye {
+            transform: translateX(-4px);
+        }
+        @keyframes ai-turn-l-act {
+            0%, 100% { transform: translateX(-50%) rotateY(0); }
+            50% { transform: translateX(-50%) rotateY(-35deg); }
+        }
+        
+        .ai-avatar.turn-r {
+            animation: ai-turn-r-act 1.2s ease-in-out;
+        }
+        .ai-avatar.turn-r .ai-eye {
+            transform: translateX(4px);
+        }
+        @keyframes ai-turn-r-act {
+            0%, 100% { transform: translateX(-50%) rotateY(0); }
+            50% { transform: translateX(-50%) rotateY(35deg); }
+        }
+
+        /* --- 表情形变 (Emotion Shapes) --- */
+        
+        /* 喜 (Happy) - 向上拱起的笑脸，并整体轻微上提 */
+        .ai-avatar.happy { transform: translateX(-50%) translateY(-3px); }
+        .ai-avatar.happy .ai-eye {
+            border-radius: 6px 6px 3px 3px;
+            height: 18px; /* 维持高度，仅微调圆角 */
+        }
+
+        /* 怒 (Angry) - 向内聚拢倾斜，球体轻微前倾 */
+        .ai-avatar.angry { transform: translateX(-50%) rotateX(15deg); }
+        .ai-avatar.angry .ai-eye-l { transform: rotate(18deg); }
+        .ai-avatar.angry .ai-eye-r { transform: rotate(-18deg); }
+
+        /* 哀 (Sad) - 向外侧倾斜下垂，降低亮度 */
+        .ai-avatar.sad { transform: translateX(-50%) translateY(3px) rotateX(-10deg); }
+        .ai-avatar.sad .ai-eye { opacity: 0.5; }
+        .ai-avatar.sad .ai-eye-l { transform: rotate(-12deg); }
+        .ai-avatar.sad .ai-eye-r { transform: rotate(12deg); }
+
+        /* 乐 (Joy) - 眯成一条线的喜悦，球体快速轻微抖动 */
+        .ai-avatar.joy { animation: ai-joy-bounce 0.5s ease-in-out infinite alternate; }
+        .ai-avatar.joy .ai-eye {
+            height: 4px; /* 缩减高度，形成细窄胶囊 */
+            background: #00FBFF;
+            transform: translateY(-4px);
+        }
+        @keyframes ai-joy-bounce {
+            from { transform: translateX(-50%) translateY(0); }
+            to { transform: translateX(-50%) translateY(-5px); }
+        }
+
+        /* --- Expanded State (AI Island) --- */
+        .ai-island-container.expanded .ai-aura {
+            opacity: 1;
+            width: 700px; /* Wider aura */
+            height: 180px; /* Taller aura */
+            /* When expanding: wait 0.3s for capsule to finish, then fade in over 0.3s */
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease 0.3s;
+            animation: aura-shimmer 2s linear infinite; /* Sped up from 4s to 2s */
+        }
+
+        @keyframes aura-shimmer {
+            0% { background-position: 0% 0%; background-size: 300% 300%; }
+            50% { background-position: 100% 100%; background-size: 300% 300%; }
+            100% { background-position: 0% 0%; background-size: 300% 300%; }
+        }
+
+        .ai-island-container.expanded .ai-avatar {
+            width: 586px;
+            height: 120px; /* Matched the exact requested height */
+            border-radius: 60px;
+            justify-content: flex-end; /* Move eyes to the right */
+            padding-right: 48px;
+            background: radial-gradient(ellipse at center, #2a2a2a 0%, #111111 100%);
+            box-shadow: 
+                inset 0px 4px 10px rgba(255,255,255,0.05),
+                inset 0px -4px 10px rgba(0,0,0,0.8),
+                0 10px 30px rgba(0,0,0,0.6);
+            /* Important: preserve the centering translate and only reset rotation/scale */
+            transform: translate(-50%, 0) rotate(0) scale(1) !important; 
+        }
+
+        .ai-island-container.expanded .ai-inner-glow {
+            opacity: 0.6;
+            animation: aura-shimmer 2s linear infinite; /* Reuse shimmer, match 2s speed */
+        }
+
+        .ai-island-container.expanded .ai-eyes-container {
+            gap: 12px;
+            z-index: 2; /* Keep above inner glow */
+        }
+
+        .ai-island-container.expanded .ai-eye {
+            /* Reset emotion classes overriding */
+            transform: none !important;
+            border-radius: 8px !important;
+            height: 24px !important;
+            width: 12px !important;
+            opacity: 1 !important;
+            background: linear-gradient(to bottom, #00FBFF 0%, rgba(0, 251, 255, 0.4) 100%) !important;
+            box-shadow: 0 0 15px rgba(0, 251, 255, 0.8) !important;
+            /* Fast Breathing Animation */
+            animation: ai-fast-breathe 1s ease-in-out infinite !important;
+        }
+
+        .ai-island-container.expanded .ai-eye-l { animation-delay: 0s !important; }
+        .ai-island-container.expanded .ai-eye-r { animation-delay: 0.2s !important; } /* Restore slight delay for natural breathing */
+
+        @keyframes ai-fast-breathe {
+            0%, 100% { 
+                opacity: 0.7;
+                box-shadow: 0 0 10px rgba(0, 251, 255, 0.6);
+            }
+            50% { 
+                opacity: 1;
+                box-shadow: 0 0 20px rgba(0, 251, 255, 0.9), 0 0 35px rgba(0, 251, 255, 0.5);
+            }
+        }
+
+        .ai-island-container.expanded .ai-text {
+            left: 48px;
+            font-size: 20px; /* Larger text for the taller capsule */
+            opacity: 1;
+            transition-delay: 0.15s; /* Wait for expansion */
+            z-index: 2; /* Keep above inner glow */
+            white-space: normal;
+            width: 430px;
+            line-height: 1.6;
+        }
+        #three-js-canvas-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: -1; /* 确保在 UI 图片下方 */
+    pointer-events: auto; /* 允许 3D 场景接收点击/旋转事件 */
+}
+/* --- Loading Screen 样式 --- */
+#loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #111111; /* 极暗的深灰底色 */
+    z-index: 99999; /* 保证它盖住屏幕上所有东西 */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.loading-logo {
+    color: #ffffff;
+    font-family: 'Arial', sans-serif;
+    font-size: 24px;
+    font-weight: 300;
+    letter-spacing: 6px;
+    margin-bottom: 30px;
+}
+.loading-logo span {
+    font-weight: 600;
+    color: #00FBFF;
+}
+
+/* 进度条轨道 */
+.loading-bar-container {
+    width: 400px;
+    height: 2px;
+    background-color: rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
+    border-radius: 2px;
+}
+
+/* 进度条填充（带霓虹发光） */
+.loading-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+    background-color: #00FBFF;
+    box-shadow: 0 0 15px rgba(0, 251, 255, 0.8), 0 0 30px rgba(0, 251, 255, 0.4);
+    transition: width 0.1s ease-out; /* 让进度涨起来顺滑 */
+}
+
+/* 百分比数字 */
+.loading-text {
+    color: rgba(255, 255, 255, 0.6);
+    font-family: monospace;
+    font-size: 14px;
+    letter-spacing: 2px;
+    margin-top: 15px;
+    font-variant-numeric: tabular-nums; /* 保证数字跳动时宽度固定不变 */
+}
+/* 确保 UI 图片不会遮挡 3D 交互 */
+.weather-text, .good-morning, .control-l, .control-r {
+    pointer-events: none;
+}
+    </style>
+    <!-- 加载 React 相关库的 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <!-- 加载 Babel 用于实时编译 JSX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <!-- 加载 React 相关库的 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <!-- 加载 Babel 用于实时编译 JSX -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+<div id="loading-screen">
+    <div class="loading-logo">AI COCKPIT <span>INITIALIZING</span></div>
+    <div class="loading-bar-container">
+        <div class="loading-bar-fill" id="loading-fill"></div>
+    </div>
+    <div class="loading-text" id="loading-text">0%</div>
+</div>
+<div class="app-wrapper">
+<div class="canvas" id="canvas">
+    <!-- Toggle Button for State 1/2 -->
+    <div class="toggle-btn" id="toggleBtn" title="Toggle State"></div>
+
+    <!-- Toggle Button for AI Island -->
+    <div class="toggle-btn" id="toggleAIBtn" title="Toggle AI Island" style="top: 80px;"></div>
+
+    <!-- Debug Button: trigger both -->
+    <div class="toggle-btn" id="debugBtn" title="Debug: Toggle Both" style="top: 130px; background-color: rgba(255, 0, 0, 0.5);"></div>
+
+    <!-- Particle Matrix Layer (Global Canvas) -->
+    <!-- Map Window (Right Window) -->
+    <div class="map-window" style="z-index: 20;">
+        <img src="assets/images/img_map_02.png" alt="Map" class="map-bg">
+    </div>
+
+    <!-- Divider Touch Zone -->
+    <div id="divider-touch-zone"></div>
+
+    <!-- Car Scene -->
+<div class="scene-container" id="three-js-canvas-container">
+    <canvas id="three-canvas"></canvas> <img src="assets/images/weather.png" alt="Weather" class="weather-text">
+    <img src="assets/images/goog_morning.png" alt="Good Morning" class="good-morning">
+    <img src="assets/images/control_l.png" alt="Control Left" class="control-l">
+    <img src="assets/images/control_r.png" alt="Control Right" class="control-r">
+</div>
+
+    <!-- Common Top/Bottom -->
+    <div class="ai-island-container">
+        <!-- Colored aura glow for expanded state -->
+        <div class="ai-aura"></div>
+        
+        <div class="ai-avatar" title="AI Assistant">
+            <!-- Inner bottom glow for expanded state -->
+            <div class="ai-inner-glow"></div>
+            
+            <div class="ai-text">收到~！今天我来开吧，你只管补觉，路线已设定，要在常去的点顺路拿杯特浓美式吗？</div>
+            <div class="ai-eyes-container">
+                <div class="ai-eye ai-eye-l"></div>
+                <div class="ai-eye ai-eye-r"></div>
+            </div>
+        </div>
+    </div>
+    <img src="assets/images/status.png" alt="Status Bar" class="status-bar">
+    <img src="assets/images/dock.png" alt="Dock" class="dock">
+</div>
+
+<!-- WORKSPACE SIDEBAR -->
+<div class="workspace">
+    <div class="workspace-header">
+        <h2>全局 / Global</h2>
+        <button class="save-btn" id="save-params-btn">✏ 写入参数</button>
+    </div>
+
+    <div class="control-group">
+        <label>环境反射强度 Env Intensity: <span id="val-env-intensity">1.0</span></label>
+        <input type="range" id="ctrl-env-intensity" min="0" max="3" step="0.05" value="1.0">
+    </div>
+
+    <div class="control-group">
+        <label>整体曝光 Exposure: <span id="val-exposure">0.75</span></label>
+        <input type="range" id="ctrl-exposure" min="0.2" max="3" step="0.05" value="0.75">
+    </div>
+
+    <h2 style="margin-top:10px;">车漆 / Paint</h2>
+    
+    <div class="control-group">
+        <label>车漆颜色 Color: <span id="val-color">#fafcff</span></label>
+        <input type="color" id="ctrl-color" value="#fafcff">
+    </div>
+    
+    <div class="control-group">
+        <label>金属度 Metalness: <span id="val-metalness">0.85</span></label>
+        <input type="range" id="ctrl-metalness" min="0" max="1" step="0.01" value="0.85">
+    </div>
+    
+    <div class="control-group">
+        <label>表面粗糙度 Roughness: <span id="val-roughness">0.21</span></label>
+        <input type="range" id="ctrl-roughness" min="0" max="1" step="0.01" value="0.21">
+    </div>
+
+    <div class="control-group">
+        <label>清漆层厚度 Clearcoat: <span id="val-clearcoat">0.53</span></label>
+        <input type="range" id="ctrl-clearcoat" min="0" max="1" step="0.01" value="0.53">
+    </div>
+
+    <div class="control-group">
+        <label>清漆粗糙度 CC Roughness: <span id="val-ccroughness">0</span></label>
+        <input type="range" id="ctrl-ccroughness" min="0" max="1" step="0.01" value="0">
+    </div>
+
+    <div class="control-group">
+        <label>反光强度 Env Map: <span id="val-envmap">0.1</span></label>
+        <input type="range" id="ctrl-envmap" min="0.1" max="5" step="0.1" value="0.1">
+    </div>
+
+    <h2 style="margin-top:10px;">主光 / Sun Light</h2>
+
+    <div class="control-group">
+        <label>主光强度 Intensity: <span id="val-sun-intensity">4.2</span></label>
+        <input type="range" id="ctrl-sun-intensity" min="0" max="8" step="0.1" value="4.2">
+    </div>
+
+    <div class="control-group">
+        <label>主光水平位置 X: <span id="val-sun-x">20</span></label>
+        <input type="range" id="ctrl-sun-x" min="-20" max="20" step="0.5" value="20">
+    </div>
+
+    <div class="control-group">
+        <label>主光高度 Y: <span id="val-sun-y">9</span></label>
+        <input type="range" id="ctrl-sun-y" min="1" max="30" step="0.5" value="9">
+    </div>
+
+    <h2 style="margin-top:10px;">腰线补光 / Rim Light</h2>
+
+    <div class="control-group">
+        <label>补光强度 Intensity: <span id="val-rim-intensity">3.7</span></label>
+        <input type="range" id="ctrl-rim-intensity" min="0" max="5" step="0.1" value="3.7">
+    </div>
+
+    <div class="control-group">
+        <label>补光水平位置 X: <span id="val-rim-x">3.5</span></label>
+        <input type="range" id="ctrl-rim-x" min="-20" max="20" step="0.5" value="3.5">
+    </div>
+
+    <div class="control-group">
+        <label>补光垂直位置 Y: <span id="val-rim-y">2.5</span></label>
+        <input type="range" id="ctrl-rim-y" min="0" max="20" step="0.5" value="2.5">
+    </div>
+
+    <h2 style="margin-top:10px;">玻璃 / Glass</h2>
+
+    <div class="control-group">
+        <label>玻璃反射强度 Env Map: <span id="val-glass-env">4.7</span></label>
+        <input type="range" id="ctrl-glass-env" min="0" max="5" step="0.1" value="4.7">
+    </div>
+
+    <div class="control-group">
+        <label>玻璃透明度 Opacity: <span id="val-glass-opacity">0.72</span></label>
+        <input type="range" id="ctrl-glass-opacity" min="0" max="1" step="0.01" value="0.72">
+    </div>
+
+    <div class="control-group">
+        <label>玻璃磨砂度 Roughness: <span id="val-glass-roughness">0.0</span></label>
+        <input type="range" id="ctrl-glass-roughness" min="0" max="1" step="0.01" value="0.0">
+    </div>
+
+    <h2 style="margin-top:10px;">前灯玻璃 / Front Lamp Glass</h2>
+    <div class="control-group">
+        <label>前灯玻璃透明度 Opacity: <span id="val-flg-opacity">0.25</span></label>
+        <input type="range" id="ctrl-flg-opacity" min="0" max="1" step="0.01" value="0.25">
+    </div>
+    <div class="control-group">
+        <label>前灯玻璃磨砂度 Roughness: <span id="val-flg-roughness">0.05</span></label>
+        <input type="range" id="ctrl-flg-roughness" min="0" max="1" step="0.01" value="0.05">
+    </div>
+    <div class="control-group">
+        <label>前灯发光色 Emissive: <span id="val-flg-emissive">#ffffff</span></label>
+        <input type="color" id="ctrl-flg-emissive" value="#ffffff">
+    </div>
+    <div class="control-group">
+        <label>前灯发光强度: <span id="val-flg-emissive-int">1.0</span></label>
+        <input type="range" id="ctrl-flg-emissive-int" min="0" max="10" step="0.1" value="1.0">
+    </div>
+    <div class="control-group">
+        <label>前灯反射 Env Map: <span id="val-flg-env">2.0</span></label>
+        <input type="range" id="ctrl-flg-env" min="0" max="10" step="0.1" value="2.0">
+    </div>
+
+    <h2 style="margin-top:10px;">后灯玻璃 / Rear Lamp Glass</h2>
+    <div class="control-group">
+        <label>后灯玻璃透明度 Opacity: <span id="val-rlg-opacity">0.25</span></label>
+        <input type="range" id="ctrl-rlg-opacity" min="0" max="1" step="0.01" value="0.25">
+    </div>
+    <div class="control-group">
+        <label>后灯玻璃磨砂度 Roughness: <span id="val-rlg-roughness">0.05</span></label>
+        <input type="range" id="ctrl-rlg-roughness" min="0" max="1" step="0.01" value="0.05">
+    </div>
+    <div class="control-group">
+        <label>后灯发光色 Emissive: <span id="val-rlg-emissive">#ff2020</span></label>
+        <input type="color" id="ctrl-rlg-emissive" value="#ff2020">
+    </div>
+    <div class="control-group">
+        <label>后灯发光强度: <span id="val-rlg-emissive-int">0</span></label>
+        <input type="range" id="ctrl-rlg-emissive-int" min="0" max="10" step="0.1" value="0">
+    </div>
+    <div class="control-group">
+        <label>后灯反射 Env Map: <span id="val-rlg-env">2.0</span></label>
+        <input type="range" id="ctrl-rlg-env" min="0" max="10" step="0.1" value="2.0">
+    </div>
+
+    <h2 style="margin-top:10px;">摇臂相机 / Crane Cam</h2>
+
+    <div class="control-group">
+        <label>距离 Distance: <span id="val-distance">11.3</span></label>
+        <input type="range" id="ctrl-distance" min="3" max="30" step="0.1" value="11.3">
+    </div>
+    <div class="control-group">
+        <label>俯仰角 Elevation: <span id="val-elevation">1.5°</span></label>
+        <input type="range" id="ctrl-elevation" min="-2" max="80" step="0.5" value="1.5">
+    </div>
+    <div class="control-group">
+        <label>旋转 Azimuth: <span id="val-azimuth">126°</span></label>
+        <input type="range" id="ctrl-azimuth" min="-180" max="180" step="1" value="126">
+    </div>
+    <div class="control-group">
+        <label>焦距 Focal: <span id="val-focal">59mm</span></label>
+        <input type="range" id="ctrl-focal" min="16" max="200" step="1" value="59">
+    </div>
+
+    <h2 style="margin-top:10px;">半球光 / Hemisphere</h2>
+
+    <div class="control-group">
+        <label>天空色 Sky Color: <span id="val-sky">#ffffff</span></label>
+        <input type="color" id="ctrl-sky" value="#ffffff">
+    </div>
+
+    <div class="control-group">
+        <label>地面色 Ground Color: <span id="val-ground">#223344</span></label>
+        <input type="color" id="ctrl-ground" value="#223344">
+    </div>
+
+    <div class="control-group">
+        <label>半球光强度 Intensity: <span id="val-hemi">2.05</span></label>
+        <input type="range" id="ctrl-hemi" min="0" max="3" step="0.05" value="2.05">
+    </div>
+
+    <h2 style="margin-top:10px;">场景 / Scene</h2>
+
+    <div class="control-group">
+        <label>背景色 Background: <span id="val-bg">#FAFDFF</span></label>
+        <input type="color" id="ctrl-bg" value="#fafdff">
+    </div>
+
+    <div class="control-group">
+        <label>地面远色 Ground Far: <span id="val-ground-top">#FFFFFF</span></label>
+        <input type="color" id="ctrl-ground-top" value="#ffffff">
+    </div>
+
+    <div class="control-group">
+        <label>地面近色 Ground Near: <span id="val-ground-bottom">#CDD2D6</span></label>
+        <input type="color" id="ctrl-ground-bottom" value="#cdd2d6">
+    </div>
+</div>
+</div> <!-- .app-wrapper end -->
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const toggleBtn = document.getElementById('toggleBtn');
+    const toggleAIBtn = document.getElementById('toggleAIBtn');
+    const debugBtn = document.getElementById('debugBtn');
+
+// --- 找到这一段并替换 ---
+toggleBtn.addEventListener('click', () => {
+    canvas.classList.toggle('state-2');
+
+    // 核心修复：这里应该是发送信号，而不是添加监听
+    window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: canvas.classList.contains('state-2') ? 'center' : 'state-a' } }));
+});
+
+    // 手势交互（同时支持鼠标和触摸）
+    // 状态A（全屏车模）↔ 状态B（分屏）↔ 状态C（全屏地图）
+    // 分屏内五档吸附：状态C | 左1/3 | 默认 | 右1/3 | 状态A
+    const dividerZone = document.getElementById('divider-touch-zone');
+    const sceneContainer_gesture = document.getElementById('three-js-canvas-container');
+    const mapWindow = document.querySelector('.map-window');
+    let _dragMode = null; // null | 'right-edge' | 'left-edge' | 'divider'
+    let _rightEdgeTimer = null;
+    let _leftEdgeTimer = null;
+
+    // 吸附位置常量
+    const SNAP_R_SCENE_W = 1232;
+    const SNAP_R_MAP_L   = 1280;
+    const SNAP_R_MAP_W   = 616;
+    const SNAP_R_DIV_L   = 1228;
+    // 吸附阈值（相邻两档中点）
+    const THRESH_C = 304;   // mid(0, 608) → 状态C
+    const THRESH_R = 920;   // mid(608, 1232)
+    const THRESH_A = 1560;  // mid(1232, ~1900) → 状态A
+
+    // 辅助：清除所有手势 inline 样式
+    function clearGestureStyles() {
+        sceneContainer_gesture.style.width = '';
+        mapWindow.style.left = '';
+        mapWindow.style.width = '';
+        dividerZone.style.left = '';
+    }
+
+    // 辅助：进入状态C
+    function enterStateC() {
+        canvas.classList.remove('state-2');
+        canvas.classList.add('state-c');
+        window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'state-c' } }));
+        requestAnimationFrame(clearGestureStyles);
+    }
+
+    // 辅助：进入状态A
+    function enterStateA() {
+        canvas.classList.remove('state-2');
+        canvas.classList.remove('state-c');
+        window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'state-a' } }));
+        requestAnimationFrame(clearGestureStyles);
+    }
+
+    // 辅助：应用某档吸附样式（null = 清除为 CSS 默认）
+    function applySnap(sw, ml, mw, dl) {
+        requestAnimationFrame(() => {
+            sceneContainer_gesture.style.width = sw != null ? sw + 'px' : '';
+            mapWindow.style.left      = ml != null ? ml + 'px' : '';
+            mapWindow.style.width     = mw != null ? mw + 'px' : '';
+            dividerZone.style.left    = dl != null ? dl + 'px' : '';
+        });
+    }
+
+    // 辅助：四档吸附判定（divider/left-edge 共用）
+    function snapBySceneWidth(sceneWidth) {
+        if (sceneWidth > THRESH_A) {
+            enterStateA();
+        } else if (sceneWidth > THRESH_R) {
+            applySnap(SNAP_R_SCENE_W, SNAP_R_MAP_L, SNAP_R_MAP_W, SNAP_R_DIV_L);
+            window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'right' } }));
+        } else if (sceneWidth > THRESH_C) {
+            applySnap(null, null, null, null);
+            window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'center' } }));
+        } else {
+            enterStateC();
+        }
+    }
+
+    // 1) 状态A：右侧边缘向左划 → 地图窗口滑入
+    canvas.addEventListener('pointerdown', (e) => {
+        if (_dragMode) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = 1920 / rect.width;
+        const relX = (e.clientX - rect.left) * scaleX;
+
+        if (!canvas.classList.contains('state-2') && !canvas.classList.contains('state-c') && relX >= 1840) {
+            // 状态A → 右侧边缘拖入：200ms 窗口化动画 + UI 隐藏
+            _dragMode = 'right-edge';
+            e.preventDefault();
+
+            // 立即隐藏 Good Morning（其它元素保持可见）
+            const goodMorning = canvas.querySelector('.good-morning');
+            if (goodMorning) goodMorning.style.opacity = '0';
+
+            // 窗口化属性 200ms 动画（含 width，X/Y 同步缩放）
+            sceneContainer_gesture.style.transition = 'top 200ms ease-out, left 200ms ease-out, width 200ms ease-out, height 200ms ease-out, border-radius 200ms ease-out, box-shadow 200ms ease-out';
+            // UI 元素位置动画同步 200ms ease-out（覆盖基础 CSS 0.6s）
+            const uiInScene = canvas.querySelectorAll('.weather-text, .control-l, .control-r');
+            uiInScene.forEach(el => el.style.transition = 'all 200ms ease-out');
+            mapWindow.style.transition = 'none';
+            canvas.classList.add('state-2');
+
+            // 场景初始为最大窗口宽度（左右各留 24px），地图暂不显示
+            sceneContainer_gesture.style.width = '1872px';
+            mapWindow.style.left = '1920px';
+            mapWindow.style.width = '0px';
+            dividerZone.style.left = '1868px';
+
+            // 200ms 后：结束动画（transition:none 阻断 CSS 基础 transition）
+            _rightEdgeTimer = setTimeout(() => {
+                _rightEdgeTimer = null;
+                sceneContainer_gesture.style.transition = 'none';
+                uiInScene.forEach(el => el.style.transition = '');
+            }, 200);
+        } else if (canvas.classList.contains('state-c') && relX <= 80) {
+            // 状态C → 左侧边缘拖入：300ms 地图窗口化动画 + 拖拽
+            _dragMode = 'left-edge';
+            e.preventDefault();
+
+            // 隐藏场景 UI 叠层
+            const uiOverlays = canvas.querySelectorAll('.weather-text, .good-morning, .control-l, .control-r');
+            uiOverlays.forEach(el => el.style.opacity = '0');
+
+            // 切换到 state-2
+            canvas.classList.remove('state-c');
+            canvas.classList.add('state-2');
+
+            // 场景：暂不显示（宽度为0，隐藏在左边缘外）
+            sceneContainer_gesture.style.transition = 'none';
+            sceneContainer_gesture.style.width = '0px';
+            dividerZone.style.left = '-4px';
+
+            // 地图：最大窗口宽度（左右各留 24px），窗口化属性 200ms 动画（含 width，X/Y 同步）
+            mapWindow.style.transition = 'top 200ms ease-out, left 200ms ease-out, width 200ms ease-out, height 200ms ease-out, border-radius 200ms ease-out, box-shadow 200ms ease-out';
+            mapWindow.style.left = '24px';
+            mapWindow.style.width = '1872px';
+
+            // 200ms 后：结束动画
+            _leftEdgeTimer = setTimeout(() => {
+                _leftEdgeTimer = null;
+                mapWindow.style.transition = 'none';
+            }, 200);
+        }
+    });
+
+    // 2) 状态B：分割线开始拖拽
+    dividerZone.addEventListener('pointerdown', (e) => {
+        _dragMode = 'divider';
+        e.preventDefault();
+        sceneContainer_gesture.style.transition = 'none';
+        mapWindow.style.transition = 'none';
+        // Keep current map width instead of resetting to CSS default
+        const currentSceneW = parseFloat(sceneContainer_gesture.style.width) || sceneContainer_gesture.offsetWidth;
+        const mapLeft = currentSceneW + 48;
+        mapWindow.style.width = (1920 - mapLeft - 24) + 'px';
+    });
+
+    // 统一 move
+    document.addEventListener('pointermove', (e) => {
+        if (!_dragMode) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = 1920 / rect.width;
+        const pointerX = (e.clientX - rect.left) * scaleX;
+
+        if (_dragMode === 'right-edge') {
+            // 右侧边缘拖入：场景跟手，地图在空间足够时才出现
+            const sceneWidth = Math.max(10, Math.min(1872, pointerX - 36));
+            sceneContainer_gesture.style.width = sceneWidth + 'px';
+            dividerZone.style.left = (sceneWidth - 4) + 'px';
+            const mapLeft = sceneWidth + 48;
+            const mapWidth = 1920 - mapLeft - 24;
+            if (mapWidth > 0) {
+                mapWindow.style.left = mapLeft + 'px';
+                mapWindow.style.width = mapWidth + 'px';
+            } else {
+                mapWindow.style.left = '1920px';
+                mapWindow.style.width = '0px';
+            }
+        } else if (_dragMode === 'left-edge') {
+            // 左侧边缘拖入：地图跟手缩小，场景在空间足够时才出现
+            const sceneWidth = Math.max(0, Math.min(1872, pointerX - 36));
+            const mapLeft = sceneWidth + 48;
+            const mapWidth = 1920 - mapLeft - 24;
+            if (sceneWidth > 0 && mapWidth > 0) {
+                sceneContainer_gesture.style.width = sceneWidth + 'px';
+                mapWindow.style.left = mapLeft + 'px';
+                mapWindow.style.width = mapWidth + 'px';
+                dividerZone.style.left = (sceneWidth - 4) + 'px';
+            } else if (sceneWidth <= 0) {
+                // 还没拖出足够空间，场景隐藏，地图保持最大
+                sceneContainer_gesture.style.width = '0px';
+                mapWindow.style.left = '24px';
+                mapWindow.style.width = '1872px';
+                dividerZone.style.left = '-4px';
+            }
+        } else {
+            // divider 逻辑：地图填满剩余空间
+            const sceneWidth = Math.max(10, Math.min(1872, pointerX - 36));
+            sceneContainer_gesture.style.width = sceneWidth + 'px';
+            const mapLeft = sceneWidth + 48;
+            mapWindow.style.left = mapLeft + 'px';
+            mapWindow.style.width = (1920 - mapLeft - 24) + 'px';
+            dividerZone.style.left = (sceneWidth - 4) + 'px';
+        }
+    });
+
+    // 统一 up
+    document.addEventListener('pointerup', (e) => {
+        if (!_dragMode) return;
+        const mode = _dragMode;
+        _dragMode = null;
+
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = 1920 / rect.width;
+        const pointerX = (e.clientX - rect.left) * scaleX;
+
+        if (mode === 'right-edge') {
+            // 清理 200ms 窗口化计时器（若还在进行中）
+            if (_rightEdgeTimer) {
+                clearTimeout(_rightEdgeTimer);
+                _rightEdgeTimer = null;
+            }
+            sceneContainer_gesture.style.transition = '';
+            // 清除 UI 元素的 inline transition 覆盖
+            canvas.querySelectorAll('.weather-text, .control-l, .control-r')
+                .forEach(el => el.style.transition = '');
+            // Good Morning 松开后 200ms 淡入（其它元素未隐藏，无需恢复）
+            const gmEl = canvas.querySelector('.good-morning');
+            if (gmEl) { gmEl.style.transition = 'opacity 200ms ease-out'; gmEl.style.opacity = ''; }
+            setTimeout(() => { if (gmEl) gmEl.style.transition = ''; }, 200);
+            // 右侧边缘拖入释放：和 divider 共用吸附逻辑
+            const sceneWidth = Math.max(10, Math.min(1872, pointerX - 36));
+            mapWindow.style.transition = '';
+            snapBySceneWidth(sceneWidth);
+        } else if (mode === 'left-edge') {
+            // 清理 200ms 窗口化计时器
+            if (_leftEdgeTimer) {
+                clearTimeout(_leftEdgeTimer);
+                _leftEdgeTimer = null;
+            }
+            mapWindow.style.transition = '';
+            // UI 松开后 200ms 淡入
+            const uiEls = canvas.querySelectorAll('.weather-text, .good-morning, .control-l, .control-r');
+            uiEls.forEach(el => { el.style.transition = 'opacity 200ms ease-out'; el.style.opacity = ''; });
+            setTimeout(() => uiEls.forEach(el => el.style.transition = ''), 200);
+            // 左侧边缘拖入释放：和 divider 共用吸附逻辑
+            const sceneWidth = Math.max(10, Math.min(1872, pointerX - 36));
+            sceneContainer_gesture.style.transition = '';
+            snapBySceneWidth(sceneWidth);
+        } else if (mode === 'divider') {
+            const sceneWidth = Math.max(10, Math.min(1872, pointerX - 36));
+            sceneContainer_gesture.style.transition = '';
+            mapWindow.style.transition = '';
+            snapBySceneWidth(sceneWidth);
+        }
+    });
+
+// 如果你有其他按钮触发状态（如 debugBtn），也请确保加上这一行
+
+
+
+    // AI Avatar Controller (Expressions + Physical Actions + Random Blinking)
+    const aiIsland = document.querySelector('.ai-island-container');
+    const aiAvatar = document.querySelector('.ai-avatar');
+    const aiText = document.querySelector('.ai-text');
+    const emotions = ['happy', 'angry', 'sad', 'joy', 'neutral'];
+    const actions = ['nod', 'turn-l', 'turn-r'];
+    let lastEmotion = 'neutral';
+    let isExpanded = false;
+    let blinkTimeout, emotionTimeout;
+
+    // --- Typewriter sequence config ---
+    let typeWriterInterval;
+    const triggerPhrase = "路线已设定";
+    let hasTriggeredWindow = false;
+
+    // Toggle AI Island Expansion function
+    function toggleAIExpanded(sequenceMode = false) {
+        isExpanded = !isExpanded;
+        aiIsland.classList.toggle('expanded', isExpanded);
+        
+        // Dispatch custom event for React to catch AI state changes
+        window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'center' } }));
+        
+        if (isExpanded) {
+            // Stop idle animations when expanded
+            clearTimeout(blinkTimeout);
+            clearTimeout(emotionTimeout);
+            emotions.forEach(e => aiAvatar.classList.remove(e));
+            actions.forEach(a => aiAvatar.classList.remove(a));
+            aiAvatar.classList.remove('blink');
+            aiAvatar.style.transform = ''; // reset inline transforms
+            
+            // Optional: Typewriter effect for text
+            const fullText = "收到~！今天我来开吧，你只管补觉，路线已设定，要在常去的点顺路拿杯特浓美式吗？";
+            const typeSpeed = 50; // 你可以在这里修改打字速度
+            
+            aiText.innerText = "";
+            let i = 0;
+            hasTriggeredWindow = false;
+            
+            if (typeWriterInterval) clearInterval(typeWriterInterval);
+            
+            typeWriterInterval = setInterval(() => {
+                if (i < fullText.length && isExpanded) {
+                    aiText.innerText += fullText.charAt(i);
+                    
+                    // 条件事件：当打字机打出特定文案后，触发窗口展开
+                    if (sequenceMode && !hasTriggeredWindow && aiText.innerText.includes(triggerPhrase)) {
+                        hasTriggeredWindow = true;
+                        if (!canvas.classList.contains('state-2')) {
+                            canvas.classList.add('state-2');
+                            window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'center' } }));
+                        }
+                    }
+                    
+                    i++;
+                } else {
+                    clearInterval(typeWriterInterval);
+                }
+            }, typeSpeed);
+            
+        } else {
+            // Restart idle animations when collapsed
+            if (typeWriterInterval) clearInterval(typeWriterInterval);
+            aiText.innerText = "收到~！今天我来开吧，你只管补觉，路线已设定，要在常去的点顺路拿杯特浓美式吗？";
+            setTimeout(() => {
+                blinkLoop();
+                switchEmotion();
+            }, 600); // wait for collapse animation
+        }
+    }
+
+    toggleAIBtn.addEventListener('click', () => toggleAIExpanded(false));
+
+    // Debug Button: Trigger sequence (AI capsule first, then window when text matches)
+    debugBtn.addEventListener('click', () => {
+        if (!isExpanded) {
+            // 处于收起状态时：先确保窗口收起，然后开始演示序列
+            if (canvas.classList.contains('state-2')) {
+                canvas.classList.remove('state-2');
+                window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'state-a' } }));
+            }
+            toggleAIExpanded(true); // true 开启 sequenceMode
+        } else {
+            // 处于展开状态时：点击重置所有状态为收起，以便下次演示
+            if (canvas.classList.contains('state-2')) {
+                canvas.classList.remove('state-2');
+                window.dispatchEvent(new CustomEvent('app-state-change', { detail: { snap: 'state-a' } }));
+            }
+            toggleAIExpanded(false);
+        }
+    });
+
+    // 1. Random Blink Loop
+    function blinkLoop() {
+        if (isExpanded) return;
+        if (!aiAvatar.classList.contains('joy')) { // Joy already narrows eyes
+            aiAvatar.classList.add('blink');
+            setTimeout(() => aiAvatar.classList.remove('blink'), 150);
+        }
+        blinkTimeout = setTimeout(blinkLoop, 2000 + Math.random() * 5000);
+    }
+
+    // 2. Action Logic
+    function playAction(actionName) {
+        if (isExpanded) return;
+        aiAvatar.classList.add(actionName);
+        setTimeout(() => aiAvatar.classList.remove(actionName), 1500);
+    }
+
+    // 3. Emotion Switch Loop
+    function switchEmotion() {
+        if (isExpanded) return;
+        
+        // Clear previous
+        emotions.forEach(e => aiAvatar.classList.remove(e));
+        
+        let nextEmotion;
+        do {
+            nextEmotion = emotions[Math.floor(Math.random() * emotions.length)];
+        } while (nextEmotion === lastEmotion);
+
+        if (nextEmotion !== 'neutral') {
+            aiAvatar.classList.add(nextEmotion);
+            
+            // Trigger a physical action when emotion changes (50% chance)
+            if (Math.random() > 0.5) {
+                const action = actions[Math.floor(Math.random() * actions.length)];
+                playAction(action);
+            }
+        }
+        
+        lastEmotion = nextEmotion;
+        emotionTimeout = setTimeout(switchEmotion, 4000 + Math.random() * 3000);
+    }
+
+    // Start everything
+    blinkTimeout = setTimeout(blinkLoop, 1000);
+    emotionTimeout = setTimeout(switchEmotion, 1000);
+</script>
+
+<script type="text/babel">
+    const { useState, useMemo } = React;
+
+    // === 支持的图形集合 ===
+    const SHAPE_TYPES = ['cross', 'hexagon', 'sparkle', 'heart', 'ring'];
+
+    // 使用确定性的伪随机，确保循环中图形稳定
+    const getPersistentShape = (index) => {
+        // 使用质数作为乘数，避免和数组长度产生整除问题
+        const hash = (index * 13577) % SHAPE_TYPES.length;
+        return SHAPE_TYPES[hash];
+    };
+
+    const getPersistentRotation = (index) => {
+        return (index % 2 === 0) ? 45 : 0;
+    };
+
+    // === SVG 形状组件 ===
+    const Shape = ({ type }) => {
+        const commonProps = { width: "100%", height: "100%", viewBox: "0 0 24 24", fill: "currentColor" };
+        switch (type) {
+            case 'cross':
+                return <svg {...commonProps}><path d="M 9 0 L 15 0 L 15 9 L 24 9 L 24 15 L 15 15 L 15 24 L 9 24 L 9 15 L 0 15 L 0 9 L 9 9 Z" /></svg>;
+            case 'hexagon':
+                return <svg {...commonProps}><polygon points="12 0 22.39 6 22.39 18 12 24 1.61 18 1.61 6" /></svg>;
+            case 'sparkle':
+                return <svg {...commonProps}><path d="M12 0 C12 8 8 12 0 12 C8 12 12 16 12 24 C12 16 16 12 24 12 C16 12 12 8 12 0 Z" /></svg>;
+            case 'heart':
+                return <svg {...commonProps}><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>;
+            case 'ring':
+                return <svg {...commonProps}><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="4" fill="none"/></svg>;
+            default:
+                return null;
+        }
+    };
+
+    const ParticleCell = ({ delay, duration, maxScale, easing, baseColor, index, isEvenRow, size }) => {
+        const shape = getPersistentShape(index);
+        const rotation = getPersistentRotation(index);
+        
+        // 使用 transform: translateX + translateZ(0) 强制 GPU 加速，避免排版抖动
+        const transformStyle = isEvenRow ? `translateX(50%) translateZ(0)` : `translateZ(0)`;
+        
+        return (
+            <div 
+                style={{
+                    width: `${size}px`, height: `${size}px`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transform: transformStyle,
+                    willChange: 'transform'
+                }}
+            >
+                <div 
+                    className="particle-pulse"
+                    style={{ 
+                        animationDuration: `${duration}s`,
+                        animationDelay: `${delay}s`,
+                        animationTimingFunction: easing,
+                        color: baseColor,
+                        width: '70%', height: '70%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        '--max-scale': maxScale
+                    }}
+                >
+                    <div 
+                        style={{ width: '100%', height: '100%', transform: `rotate(${rotation}deg)` }}
+                    >
+                        <Shape type={shape} />
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    function ParticleMatrix() {
+        const [appState, setAppState] = useState({
+            isState2: false,
+            isAiExpanded: false
+        });
+
+        // Listen for state changes from vanilla JS land
+        React.useEffect(() => {
+            const handleStateChange = () => {
+                setAppState({
+                    isState2: document.getElementById('canvas').classList.contains('state-2'),
+                    isAiExpanded: document.querySelector('.ai-island-container').classList.contains('expanded')
+                });
+            };
+            window.addEventListener('app-state-change', handleStateChange);
+            // Initial check
+            handleStateChange();
+            return () => window.removeEventListener('app-state-change', handleStateChange);
+        }, []);
+
+        // 1. 重新布局粒子的画布，改为整个屏幕布局：1920*1080
+        const CANVAS_WIDTH = 1920;
+        const CANVAS_HEIGHT = 1080;
+        
+        // 2. 固定每个粒子的单位大小，并可设置 (包含 padding 的网格单元大小)
+        // 这个配置可以独立于行数和列数控制粒子本身所占大小
+        const PARTICLE_SIZE = 24; 
+        
+        // 3. 自定义行数和列数。无论怎么增加，画布大小仍保持 1920x1080。
+        // 减小默认行列数，提升性能
+        const COLS = 75; 
+        const ROWS = 65;  
+        
+        // 粒子之间的真实间距（通过计算保证无论多少行列，整体宽高等于画布大小）
+        const CELL_WIDTH = CANVAS_WIDTH / COLS;
+        const CELL_HEIGHT = CANVAS_HEIGHT / ROWS;
+        
+        const THEME_COLOR = 'rgba(255, 255, 255, 0.4)'; // 适应 index.html 的柔和色彩
+
+        const particleGrid = useMemo(() => {
+            const EASINGS = [
+                'ease-in-out', 
+                'ease-in', 
+                'ease-out', 
+                'ease', 
+                'cubic-bezier(0.4, 0, 0.2, 1)',
+                'cubic-bezier(0.25, 0.1, 0.25, 1.0)',
+                'cubic-bezier(0.42, 0, 0.58, 1.0)'
+            ];
+            
+            const grid = [];
+            
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const loopsPer5s = 4 + Math.floor(Math.random() * 7); // 4 to 10 loops
+                    const duration = 5 / loopsPer5s;
+                    
+                    grid.push({
+                        id: r * COLS + c,
+                        index: r * COLS + c,
+                        delay: -(Math.random() * 5),
+                        duration: duration,
+                        maxScale: 0.7 + Math.random() * 0.3,
+                        easing: EASINGS[Math.floor(Math.random() * EASINGS.length)],
+                        xPos: c * CELL_WIDTH + (CELL_WIDTH / 2),
+                        yPos: r * CELL_HEIGHT + (CELL_HEIGHT / 2)
+                    });
+                }
+            }
+            return grid;
+        }, [COLS, ROWS]);
+
+        // Logic for which particles to render based on the current UI State
+        const getParticleVisibility = (p) => {
+            // STATE 1 Logic
+            if (!appState.isState2) {
+                if (!appState.isAiExpanded) {
+                    // State 1 + Island Collapsed: Hide all particles
+                    return false; 
+                } else {
+                    // State 1 + Island Expanded: Show particles around the capsule (Top center)
+                    // Capsule roughly: x from (960 - 350) to (960 + 350), y from 0 to 200
+                    const isAroundCapsule = (p.xPos > 300 && p.xPos < 1620) && (p.yPos < 450); // Increased Y range to show more particles
+                    return isAroundCapsule;
+                }
+            } 
+            // STATE 2 Logic
+            else {
+                // State 2 (regardless of island): Show on the right side window
+                // Right window roughly: left: 656 to 1896, top: 72 to 984
+                // We keep the old mask logic: hide left 25%, and hide the solid center of the map
+                if (p.xPos < CANVAS_WIDTH * 0.25) return false;
+                
+                // Cut out the solid center of the map to save performance
+                const isCoveredByMap = (p.xPos > 656 + 60 && p.xPos < 1896 - 60) && 
+                                       (p.yPos > 72 + 60 && p.yPos < 984 - 60);
+                if (isCoveredByMap) return false;
+                
+                return true;
+            }
+        };
+
+        // Dynamic mask-image based on state
+        const maskImageStyle = appState.isState2 
+            ? 'linear-gradient(to right, transparent 25%, black 38%)' // State 2: Fade in from left
+            : (appState.isAiExpanded 
+                // State 1 + Ai: Tight elliptical glow matching the 586x120 capsule, spreading sideways more than downwards (matching image 1)
+                ? 'radial-gradient(ellipse 600px 150px at 50% 60px, black 0%, transparent 100%)' 
+                : 'none'); // State 1 + collapsed: completely hidden by visibility logic anyway
+
+        return (
+            <div 
+                style={{
+                    width: `${CANVAS_WIDTH}px`, height: `${CANVAS_HEIGHT}px`,
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${COLS}, ${CELL_WIDTH}px)`,
+                    gridTemplateRows: `repeat(${ROWS}, ${CELL_HEIGHT}px)`,
+                    justifyContent: 'center',
+                    alignContent: 'center',
+                    maskImage: maskImageStyle,
+                    WebkitMaskImage: maskImageStyle,
+                    transition: 'mask-image 0.6s ease'
+                }}
+            >
+                {particleGrid.map((p) => {
+                    const isVisible = getParticleVisibility(p);
+                    if (!isVisible) return <div key={p.id} />;
+                    
+                    const r = Math.floor(p.index / COLS);
+                    const isEvenRow = r % 2 === 0;
+                    
+                    return (
+                        <ParticleCell 
+                            key={p.id} 
+                            index={p.index}
+                            delay={p.delay} 
+                            duration={p.duration}
+                            maxScale={p.maxScale}
+                            easing={p.easing}
+                            baseColor={THEME_COLOR} 
+                            isEvenRow={isEvenRow}
+                            size={PARTICLE_SIZE} 
+                        />
+                    );
+                })}
+            </div>
+        );
+    }
+
+    const particleRoot = ReactDOM.createRoot(document.getElementById('particle-root'));
+    particleRoot.render(<ParticleMatrix />);
+</script>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.2/index.js"
+    }
+}
+</script>
+
+<script type="module">
+    
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { gsap } from "gsap";
+    import { HorizontalBlurShader } from "three/addons/shaders/HorizontalBlurShader.js";
+    import { VerticalBlurShader } from "three/addons/shaders/VerticalBlurShader.js";
+    import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+let shadowHelper; 
+    // --- 1. 落地阴影 Helper (逻辑保持不变) ---
+class ContactShadowsHelper {
+    constructor(scene, renderer, config = {}) {
+        this.renderer = renderer;
+        this.scene = scene;
+        this.width = config.width || 25;
+        this.height = config.height || 20;
+        // 既然你测试 0.5 够用，我们将默认值设为 0.5
+        this.darkness = config.darkness || 0.5; 
+        this.blur = config.blur || 5.0; // 默认给一个明显的模糊值
+        this.init();
+    }
+
+    init() {
+        this.group = new THREE.Group();
+        this.scene.add(this.group);
+
+        // 1. 深度捕捉相机 (正交俯视)
+        this.shadowCamera = new THREE.OrthographicCamera(-this.width/2, this.width/2, this.height/2, -this.height/2, 0, 20);
+        this.shadowCamera.position.set(0, 5, 0);
+        this.shadowCamera.lookAt(0, 0, 0);
+        this.group.add(this.shadowCamera);
+
+        // 2. 独立 2D 模糊场景 (彻底切断与主场景的光影冲突)
+        this.blurScene = new THREE.Scene();
+        this.blurCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.blurPlane = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+        this.blurScene.add(this.blurPlane);
+
+        // 3. 双缓冲渲染目标 (RenderTargets)
+        this.renderTarget = new THREE.WebGLRenderTarget(1024, 1024);
+        this.renderTargetBlur = new THREE.WebGLRenderTarget(1024, 1024);
+
+        // 4. 深度材质 (输出白底黑影图)
+        this.depthMaterial = new THREE.MeshDepthMaterial();
+        this.depthMaterial.onBeforeCompile = (shader) => {
+            shader.uniforms.uDarkness = { value: this.darkness };
+            this.depthMaterial.userData.shader = shader; 
+            shader.fragmentShader = `
+                uniform float uDarkness;
+                ${shader.fragmentShader}
+            `.replace(
+                'gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );',
+                // 生成标准的正片叠底图：没车的地方是纯白(1.0)，有车的地方根据深度变黑
+                'float depthVal = (1.0 - fragCoordZ) * uDarkness;\n' +
+                'float colorVal = clamp(1.0 - depthVal, 0.0, 1.0);\n' +
+                'gl_FragColor = vec4(vec3(colorVal), 1.0);' 
+            );
+        };
+
+        // 5. 【核心】：纯手工编写的 9-Tap 高斯模糊着色器，杜绝引入失效！
+        this.blurMat = new THREE.ShaderMaterial({
+            uniforms: {
+                tDiffuse: { value: null },
+                uDirection: { value: new THREE.Vector2(1, 0) },
+                uBlur: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    // 直接输出到裁剪空间，无视相机矩阵干扰，霸占全屏
+                    gl_Position = vec4(position.xy, 0.0, 1.0); 
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform vec2 uDirection;
+                uniform float uBlur;
+                varying vec2 vUv;
+                void main() {
+                    vec4 sum = vec4(0.0);
+                    // 标准高斯采样内核
+                    sum += texture2D(tDiffuse, vUv - 4.0 * uDirection * uBlur) * 0.051;
+                    sum += texture2D(tDiffuse, vUv - 3.0 * uDirection * uBlur) * 0.0918;
+                    sum += texture2D(tDiffuse, vUv - 2.0 * uDirection * uBlur) * 0.12245;
+                    sum += texture2D(tDiffuse, vUv - 1.0 * uDirection * uBlur) * 0.1531;
+                    sum += texture2D(tDiffuse, vUv) * 0.1633;
+                    sum += texture2D(tDiffuse, vUv + 1.0 * uDirection * uBlur) * 0.1531;
+                    sum += texture2D(tDiffuse, vUv + 2.0 * uDirection * uBlur) * 0.12245;
+                    sum += texture2D(tDiffuse, vUv + 3.0 * uDirection * uBlur) * 0.0918;
+                    sum += texture2D(tDiffuse, vUv + 4.0 * uDirection * uBlur) * 0.051;
+                    gl_FragColor = sum;
+                }
+            `,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        // 6. 最终地面阴影平面
+        const planeMat = new THREE.MeshBasicMaterial({
+            map: this.renderTarget.texture,
+            transparent: true,
+            blending: THREE.MultiplyBlending, 
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            toneMapped: false,
+            fog: false
+        });
+
+        this.plane = new THREE.Mesh(new THREE.PlaneGeometry(this.width, this.height).rotateX(-Math.PI / 2), planeMat);
+        this.plane.position.y = 0.01; 
+        this.plane.renderOrder = 1000;
+        this.group.add(this.plane);
+    }
+
+update() {
+    if (this.depthMaterial.userData.shader) {
+        this.depthMaterial.userData.shader.uniforms.uDarkness.value = this.darkness;
+    }
+
+    // 1. 缓存主场景的所有状态
+    const initialBackground = this.scene.background;
+    const initialOverride = this.scene.overrideMaterial;
+    const initialFog = this.scene.fog; // 缓存雾气
+    const initialToneMapping = this.renderer.toneMapping; // 缓存色调映射
+    
+    // 缓存并锁定清除色
+    const initialClearColor = new THREE.Color();
+    const initialClearAlpha = this.renderer.getClearAlpha();
+    this.renderer.getClearColor(initialClearColor);
+
+    // 2. 关闭可能污染纯白色的所有全局效果
+    this.plane.visible = false; 
+    this.scene.background = new THREE.Color(0xffffff); 
+    this.scene.overrideMaterial = this.depthMaterial;
+    
+    this.scene.fog = null; // 【核心修复 1】：关闭雾气，防止背景染灰
+    this.renderer.toneMapping = THREE.NoToneMapping; // 【核心修复 2】：关闭色调映射，保留绝对纯白
+    this.renderer.setClearColor(0xffffff, 1);
+
+    // 3. 渲染白底黑影图
+    this.renderer.setRenderTarget(this.renderTarget);
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.shadowCamera);
+
+    // 4. 执行模糊 (此时 ToneMapping 依然是关闭状态，保证模糊边缘不掉色)
+    this.applyBlur(this.blur);
+
+    // 5. 恢复所有状态
+    this.scene.overrideMaterial = initialOverride;
+    this.scene.background = initialBackground;
+    this.scene.fog = initialFog; // 恢复雾气
+    this.renderer.toneMapping = initialToneMapping; // 恢复色调映射
+    this.renderer.setClearColor(initialClearColor, initialClearAlpha);
+    
+    this.plane.visible = true; 
+    this.renderer.setRenderTarget(null);
+}
+
+    applyBlur(amount) {
+        // 防止参数太离谱导致采样子飞出贴图边界
+        const blurPower = Math.min(amount, 20.0); 
+
+        // 锁死清除色为白色，防止外部灰色背景污染边缘
+        const initialClearColor = new THREE.Color();
+        const initialClearAlpha = this.renderer.getClearAlpha();
+        this.renderer.getClearColor(initialClearColor);
+        this.renderer.setClearColor(0xffffff, 1);
+
+        // 【核心】：采用 3 次迭代多通道渲染，形成极其顺滑的柔和散景
+        for (let i = 0; i < 3; i++) {
+            const radius = (blurPower * (i + 1)) / 1024.0; // 逐级放大的模糊圈
+
+            // 水平推开 (X轴)
+            this.blurPlane.material = this.blurMat;
+            this.blurMat.uniforms.tDiffuse.value = this.renderTarget.texture;
+            this.blurMat.uniforms.uDirection.value.set(1, 0);
+            this.blurMat.uniforms.uBlur.value = radius;
+            this.renderer.setRenderTarget(this.renderTargetBlur);
+            this.renderer.render(this.blurScene, this.blurCamera);
+
+            // 垂直推开 (Y轴)
+            this.blurMat.uniforms.tDiffuse.value = this.renderTargetBlur.texture;
+            this.blurMat.uniforms.uDirection.value.set(0, 1);
+            this.blurMat.uniforms.uBlur.value = radius;
+            this.renderer.setRenderTarget(this.renderTarget);
+            this.renderer.render(this.blurScene, this.blurCamera);
+        }
+
+        // 还原清除色
+        this.renderer.setClearColor(initialClearColor, initialClearAlpha);
+    }
+}
+
+    // --- 2. 初始化 ---
+    // 效果图：顶部接近纯白，底部是偏蓝的冷灰
+    const bgColor           = document.getElementById('ctrl-bg').value;
+    const topGradientColor  = document.getElementById('ctrl-ground-top').value;
+    const bottomGradientColor = document.getElementById('ctrl-ground-bottom').value;
+    const fogColor          = bgColor; // 始终与背景色一致，避免地平线切割
+    const canvasWrapper = document.getElementById('canvas');
+    const threeCanvas = document.getElementById('three-canvas');
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(fogColor, 18, 60); // 雾气起始更远，更通透
+
+    const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: true });
+    renderer.setSize(1920, 1080);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = parseFloat(document.getElementById('ctrl-exposure').value);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(bgColor, 1);
+    
+    const camera = new THREE.PerspectiveCamera(focalToFov(parseFloat(document.getElementById('ctrl-focal').value)), 1920 / 1080, 0.1, 1000);
+    camera.position.set(9.14, 0.80, -6.64); // Distance=11.3, Elevation=1.5°, Azimuth=126°, Focal=59mm
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.maxPolarAngle = Math.PI / 1.95; // 允许接近地面视角
+    controls.target.set(0, 0.5, 0); // 目标点稍微抬高一点点
+    controls.enablePan  = false;    // 禁止平移，目标点保持锁定
+    controls.enableZoom = false;    // 禁止滚轮缩放
+
+    // --- 摇臂相机：球坐标辅助函数 ---
+    function focalToFov(mm) {
+        return 2 * Math.atan(24 / (2 * mm)) * (180 / Math.PI);
+    }
+    function applyCraneCamera(dist, elevDeg, azDeg) {
+        const elev = elevDeg * Math.PI / 180;
+        const az   = azDeg   * Math.PI / 180;
+        const rh   = dist * Math.cos(elev);
+        camera.position.set(
+            controls.target.x + rh * Math.sin(az),
+            controls.target.y + dist * Math.sin(elev),
+            controls.target.z + rh * Math.cos(az)
+        );
+        controls.update();
+    }
+    function readCraneSliders() {
+        return {
+            dist: parseFloat(document.getElementById('ctrl-distance').value),
+            elev: parseFloat(document.getElementById('ctrl-elevation').value),
+            az:   parseFloat(document.getElementById('ctrl-azimuth').value),
+        };
+    }
+
+    // 距离滑块
+    document.getElementById('ctrl-distance').addEventListener('input', e => {
+        document.getElementById('val-distance').innerText = parseFloat(e.target.value).toFixed(1);
+        const s = readCraneSliders(); applyCraneCamera(s.dist, s.elev, s.az);
+    });
+    // 俯仰角滑块
+    document.getElementById('ctrl-elevation').addEventListener('input', e => {
+        document.getElementById('val-elevation').innerText = parseFloat(e.target.value).toFixed(1) + '°';
+        const s = readCraneSliders(); applyCraneCamera(s.dist, s.elev, s.az);
+    });
+    // 旋转滑块
+    document.getElementById('ctrl-azimuth').addEventListener('input', e => {
+        document.getElementById('val-azimuth').innerText = parseFloat(e.target.value) + '°';
+        const s = readCraneSliders(); applyCraneCamera(s.dist, s.elev, s.az);
+    });
+    // 焦距滑块
+    document.getElementById('ctrl-focal').addEventListener('input', e => {
+        const mm = parseFloat(e.target.value);
+        document.getElementById('val-focal').innerText = mm + 'mm';
+        camera.fov = focalToFov(mm);
+        camera.updateProjectionMatrix();
+    });
+
+    // OrbitControls 拖拽 → 实时回写全部三个相机滑块
+    controls.addEventListener('change', () => {
+        const rel  = camera.position.clone().sub(controls.target);
+        const dist = rel.length();
+        const elev = Math.asin(Math.max(-1, Math.min(1, rel.y / dist))) * 180 / Math.PI;
+        const az   = Math.atan2(rel.x, rel.z) * 180 / Math.PI;
+        document.getElementById('ctrl-distance').value    = dist.toFixed(1);
+        document.getElementById('val-distance').innerText  = dist.toFixed(1);
+        document.getElementById('ctrl-elevation').value   = elev.toFixed(1);
+        document.getElementById('val-elevation').innerText = elev.toFixed(1) + '°';
+        document.getElementById('ctrl-azimuth').value     = az.toFixed(0);
+        document.getElementById('val-azimuth').innerText   = az.toFixed(0) + '°';
+    });
+
+    // 车模操作区域：上下左右各缩进 120px，边缘区域不响应旋转
+    // 用 controls.enabled 而非 stopPropagation，避免阻断父级滑动手势
+    threeCanvas.addEventListener('pointerdown', (e) => {
+        const rect = threeCanvas.getBoundingClientRect();
+        const scale = rect.width / (threeCanvas.clientWidth || 1);
+        const inset = 120 * scale;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        if (x < inset || x > rect.width - inset || y < inset || y > rect.height - inset) {
+            controls.enabled = false;
+            const reEnable = () => {
+                controls.enabled = true;
+                window.removeEventListener('pointerup', reEnable);
+            };
+            window.addEventListener('pointerup', reEnable);
+        }
+    }, true);
+    const loadingScreen = document.getElementById('loading-screen');
+    const loadingFill = document.getElementById('loading-fill');
+    const loadingText = document.getElementById('loading-text');
+
+    const loadingManager = new THREE.LoadingManager();
+
+    // 每次有文件加载完毕都会触发
+    loadingManager.onProgress = function(url, itemsLoaded, itemsTotal) {
+        // 计算真实进度百分比
+        const progress = (itemsLoaded / itemsTotal) * 100;
+        loadingFill.style.width = progress + '%';
+        // 让数字有一点科技感的跳动
+        loadingText.innerText = Math.floor(progress) + '% / ASSETS LOADING';
+    };
+
+    // 所有资源全部加载完毕后触发
+    loadingManager.onLoad = function() {
+        // 让 100% 稍微停留 0.5 秒，显得优雅不突兀
+        setTimeout(() => {
+            loadingScreen.style.opacity = '0'; // 触发 CSS 渐隐动画
+            
+            // 动画结束后彻底移除 DOM，释放内存
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';
+            }, 800); 
+        }, 500);
+    };
+
+    // 任意资源加载失败时，仍然正常进入（不卡死在加载屏幕）
+    loadingManager.onError = function(url) {
+        console.warn('Asset failed to load:', url);
+        // 手动触发 onLoad 逻辑，确保加载屏幕消失
+        loadingFill.style.width = '100%';
+        loadingText.innerText = 'ERROR / ASSETS LOADING';
+        setTimeout(() => {
+            loadingScreen.style.opacity = '0';
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';
+            }, 800);
+        }, 500);
+    };
+
+    window.addEventListener('error', function(e) {
+        const txt = document.getElementById('loading-text');
+        if (txt) txt.innerText = 'SCRIPT ERROR: ' + e.message;
+        setTimeout(() => {
+            const sc = document.getElementById('loading-screen');
+            if (sc) {
+                sc.style.opacity = '0';
+                setTimeout(() => sc.style.display = 'none', 800);
+            }
+        }, 2000);
+    });
+    // 灯光：模拟阳光照射——腰线以上亮、腰线以下暗
+    
+    // 1. 半球光：天空（明亮白光）vs 地面（深暗蓝灰）
+    //    这是实现"上亮下暗"最自然的方式，朝上的面接收天光，朝下的面只接收地面暗反射
+    const hemiLight = new THREE.HemisphereLight(
+        document.getElementById('ctrl-sky').value,
+        document.getElementById('ctrl-ground').value,
+        parseFloat(document.getElementById('ctrl-hemi').value)
+    );
+    scene.add(hemiLight);
+
+    // 半球光工作区控件绑定（在模块脚本里，DOMContentLoaded 已完成，可直接绑定）
+    document.getElementById('ctrl-sky').addEventListener('input', e => {
+        hemiLight.color.set(e.target.value);
+        document.getElementById('val-sky').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-ground').addEventListener('input', e => {
+        hemiLight.groundColor.set(e.target.value);
+        document.getElementById('val-ground').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-hemi').addEventListener('input', e => {
+        hemiLight.intensity = parseFloat(e.target.value);
+        document.getElementById('val-hemi').innerText = e.target.value;
+    });
+
+    document.getElementById('ctrl-bg').addEventListener('input', e => {
+        renderer.setClearColor(e.target.value, 1);
+        scene.fog.color.set(e.target.value);
+        document.getElementById('val-bg').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-ground-top').addEventListener('input', e => {
+        groundMat.uniforms.topColor.value.set(e.target.value);
+        document.getElementById('val-ground-top').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-ground-bottom').addEventListener('input', e => {
+        groundMat.uniforms.bottomColor.value.set(e.target.value);
+        document.getElementById('val-ground-bottom').innerText = e.target.value;
+    });
+
+    // 2. 主太阳光：从右上方45°打下（光从右→阴影投到左侧，与参考效果图一致）
+    const dirLight = new THREE.DirectionalLight(0xfff5e8, parseFloat(document.getElementById('ctrl-sun-intensity').value));
+    dirLight.position.set(parseFloat(document.getElementById('ctrl-sun-x').value), parseFloat(document.getElementById('ctrl-sun-y').value), -4);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 50;
+    dirLight.shadow.camera.left = -12;
+    dirLight.shadow.camera.right = 12;
+    dirLight.shadow.camera.top = 12;
+    dirLight.shadow.camera.bottom = -12;
+    dirLight.shadow.radius = 5;
+    dirLight.shadow.bias = -0.001;
+    scene.add(dirLight);
+
+    // 工作区绑定：主太阳光
+    document.getElementById('ctrl-sun-intensity').addEventListener('input', e => {
+        dirLight.intensity = parseFloat(e.target.value);
+        document.getElementById('val-sun-intensity').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-sun-x').addEventListener('input', e => {
+        dirLight.position.x = parseFloat(e.target.value);
+        document.getElementById('val-sun-x').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-sun-y').addEventListener('input', e => {
+        dirLight.position.y = parseFloat(e.target.value);
+        document.getElementById('val-sun-y').innerText = e.target.value;
+    });
+
+    // 3. 右侧轮廓补光
+    const rimLight = new THREE.DirectionalLight(0xd8eaf8, parseFloat(document.getElementById('ctrl-rim-intensity').value));
+    rimLight.position.set(parseFloat(document.getElementById('ctrl-rim-x').value), parseFloat(document.getElementById('ctrl-rim-y').value), -2);
+    scene.add(rimLight);
+
+    // 4. 前方补光：照亮车头正面（防止正面全黑）
+    const frontFill = new THREE.DirectionalLight(0xeef2ff, 1.0);
+    frontFill.position.set(0, 4, 15);
+    scene.add(frontFill);
+
+    // 5. 后方/左侧补光：照亮被主光背对的车侧和车尾
+    const backFill = new THREE.DirectionalLight(0xdde8f5, 0.8);
+    backFill.position.set(-12, 6, -8);
+    scene.add(backFill);
+
+    // 写入参数按钮：读取当前滑块值，通过 fetch 写入 index.html 的 value 属性
+    document.getElementById('save-params-btn').addEventListener('click', async () => {
+        // 收集所有滑块/颜色的当前值
+        const sliders = document.querySelectorAll('.workspace input[type="range"], .workspace input[type="color"]');
+        let html = await (await fetch('index.html')).text();
+        sliders.forEach(s => {
+            // 匹配 id="xxx" ... value="yyy" 在同一个 <input> 标签内
+            const re = new RegExp(`(id="${s.id}"[^>]*value=")([^"]*)(")`);
+            html = html.replace(re, `$1${s.value}$3`);
+            // 同步对应的 <span> 显示文本
+            const valSpan = document.getElementById('val-' + s.id.replace('ctrl-', ''));
+            if (valSpan) {
+                const spanRe = new RegExp(`(id="val-${s.id.replace('ctrl-', '')}">)[^<]*(<)`);
+                html = html.replace(spanRe, `$1${valSpan.innerText}$2`);
+            }
+        });
+        // 同时写入相机初始位置
+        const rel = camera.position.clone().sub(controls.target);
+        const dist = rel.length();
+        const elev = Math.asin(Math.max(-1, Math.min(1, rel.y / dist))) * 180 / Math.PI;
+        const az   = Math.atan2(rel.x, rel.z) * 180 / Math.PI;
+        html = html.replace(
+            /camera\.position\.set\([^)]+\)[^\n]*/,
+            `camera.position.set(${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}); // dist=${dist.toFixed(1)}, elev=${elev.toFixed(1)}°, az=${az.toFixed(0)}°`
+        );
+        // 写回文件（需要本地服务器支持 PUT，或用 Blob 下载）
+        const blob = new Blob([html], { type: 'text/html' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'index.html';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        alert('已下载 index.html，请替换原文件');
+    });
+    document.getElementById('ctrl-rim-intensity').addEventListener('input', e => {
+        rimLight.intensity = parseFloat(e.target.value);
+        document.getElementById('val-rim-intensity').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-rim-x').addEventListener('input', e => {
+        rimLight.position.x = parseFloat(e.target.value);
+        document.getElementById('val-rim-x').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-rim-y').addEventListener('input', e => {
+        rimLight.position.y = parseFloat(e.target.value);
+        document.getElementById('val-rim-y').innerText = e.target.value;
+    });
+
+    // === 创建纹理加载器 ===
+    const texLoader = new THREE.TextureLoader(loadingManager);
+
+    // 替换为本地影棚环境贴图
+    texLoader.load("texture/Mc_P7i_StudioLight_Premium.png", (tex) => {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        scene.environment = tex;
+        scene.environmentIntensity = parseFloat(document.getElementById('ctrl-env-intensity').value);
+    });
+
+    // 工作区绑定：环境反射强度（控制车身侧面大面积亮白区最直接的旋钒）
+    document.getElementById('ctrl-env-intensity').addEventListener('input', e => {
+        scene.environmentIntensity = parseFloat(e.target.value);
+        document.getElementById('val-env-intensity').innerText = e.target.value;
+    });
+    document.getElementById('ctrl-exposure').addEventListener('input', e => {
+        renderer.toneMappingExposure = parseFloat(e.target.value);
+        document.getElementById('val-exposure').innerText = e.target.value;
+    });
+    
+    // 阴影接收平面
+    const shadowPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.ShadowMaterial({ opacity: 0.3 })
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.y = 0;
+    shadowPlane.receiveShadow = true;
+    scene.add(shadowPlane);
+
+
+shadowHelper = new ContactShadowsHelper(scene, renderer, { 
+    width: 6, 
+    height: 9,
+    darkness: 1.5, // 车底深黑投影
+    blur: 2.5       // 稍微柔化阴影边缘
+});
+window.shadowHelper = shadowHelper;
+// === 创建自定义渐变地面 === [cite: 2026-03-30]
+
+// 渐变地面 Shader 材质定义 [cite: 2026-03-30]
+const groundUniforms = {
+    topColor: { value: new THREE.Color(topGradientColor) }, // 參考圖上部暖灰色
+    bottomColor: { value: new THREE.Color(bottomGradientColor) } // 參考圖下部冷灰色
+};
+
+const groundMat = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([
+        THREE.UniformsLib['fog'], // 必须包含内置雾化 Uniforms [cite: 2026-03-30]
+        {
+            topColor: { value: new THREE.Color(topGradientColor) },
+            bottomColor: { value: new THREE.Color(bottomGradientColor) }
+        }
+    ]),
+    vertexShader: `
+        varying vec2 vUv;
+        #include <common>
+        #include <fog_pars_vertex> 
+
+        void main() {
+            vUv = uv;
+            // 关键修复：必须定义为 vec4 mvPosition 供下面的 fog_vertex 使用 [cite: 2026-03-30]
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); 
+            gl_Position = projectionMatrix * mvPosition;
+            
+            // 内置宏会查找 mvPosition 变量并计算雾化深度 [cite: 2026-03-30]
+            #include <fog_vertex> 
+        }`,
+    fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        varying vec2 vUv;
+        
+        #include <common>
+        #include <fog_pars_fragment> 
+
+        void main() {
+            // 计算垂直渐变因子 (基于屏幕坐标 y)
+            // 1080.0 是你的画布高度 [cite: 2026-03-30]
+            float gradientFactor = gl_FragCoord.y / 1080.0; 
+            gradientFactor = clamp(gradientFactor, 0.0, 1.0);
+
+            // 混合参考图的两种灰色 [cite: 2026-03-30]
+            vec3 finalColor = mix(bottomColor, topColor, gradientFactor);
+            
+            gl_FragColor = vec4(finalColor, 1.0);
+
+            // 完美的内置雾化集成 [cite: 2026-03-30]
+            #include <fog_fragment> 
+        }`,
+    fog: true // 开启此开关以激活 USE_FOG 宏 [cite: 2026-03-30]
+});
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.05;
+ground.renderOrder = 1; // 明确渲染顺序
+scene.add(ground);
+
+    // --- 全局车漆材质缓存，以便工作区可以统一调节 ---
+    let sharedBodyMaterial = null;
+    let sharedGlassMaterial = null;
+    let sharedFrontLampGlassMat = null;
+    let sharedRearLampGlassMat = null;
+
+    // UI 控制器绑定
+    const initWorkspaceControls = (mat) => {
+        if (!mat) return;
+        const cColor = document.getElementById('ctrl-color');
+        const cMetalness = document.getElementById('ctrl-metalness');
+        const cRoughness = document.getElementById('ctrl-roughness');
+        const cClearcoat = document.getElementById('ctrl-clearcoat');
+        const cCCR = document.getElementById('ctrl-ccroughness');
+        const cEnvMap = document.getElementById('ctrl-envmap');
+
+        // 初始化时立即应用已保存的滑块值
+        mat.color.set(cColor.value);
+        mat.metalness = parseFloat(cMetalness.value);
+        mat.roughness = parseFloat(cRoughness.value);
+        mat.clearcoat = parseFloat(cClearcoat.value);
+        mat.clearcoatRoughness = parseFloat(cCCR.value);
+        mat.envMapIntensity = parseFloat(cEnvMap.value);
+        mat.needsUpdate = true;
+        cColor.addEventListener('input', e => {
+            console.log('Color changed:', e.target.value);
+            mat.color.set(e.target.value);
+            mat.needsUpdate = true;
+            document.getElementById('val-color').innerText = e.target.value;
+        });
+        cMetalness.addEventListener('input', e => {
+            mat.metalness = parseFloat(e.target.value);
+            mat.needsUpdate = true;
+            document.getElementById('val-metalness').innerText = e.target.value;
+        });
+        cRoughness.addEventListener('input', e => {
+            mat.roughness = parseFloat(e.target.value);
+            mat.needsUpdate = true;
+            document.getElementById('val-roughness').innerText = e.target.value;
+        });
+        cClearcoat.addEventListener('input', e => {
+            mat.clearcoat = parseFloat(e.target.value);
+            mat.needsUpdate = true;
+            document.getElementById('val-clearcoat').innerText = e.target.value;
+        });
+        cCCR.addEventListener('input', e => {
+            mat.clearcoatRoughness = parseFloat(e.target.value);
+            mat.needsUpdate = true;
+            document.getElementById('val-ccroughness').innerText = e.target.value;
+        });
+        cEnvMap.addEventListener('input', e => {
+            mat.envMapIntensity = parseFloat(e.target.value);
+            mat.needsUpdate = true;
+            document.getElementById('val-envmap').innerText = e.target.value;
+        });
+    };
+
+    // --- 3. 材质工厂 ---
+    function loadPBR(name, isTransparent = false) {
+        let texMapName = name;
+        if (name.includes("Door") || name.includes("Body")) texMapName = "Body";
+        else if (name.includes("Wheel")) texMapName = "Wheel";
+        else if (name.includes("Lamps")) texMapName = "Lamps";
+        else if (name.includes("Seat")) texMapName = "Seat";
+        else if (name.includes("IP")) texMapName = "IP";
+        else if (name.includes("Int")) texMapName = "Int";
+
+        // --- 车身 / 车门 ---
+        if (name.includes("Body") || name.includes("Door")) {
+            if (sharedBodyMaterial) return sharedBodyMaterial;
+
+            const base = texLoader.load(`texture/Tex_Body_Base.jpg`);
+            base.flipY = false;
+            base.colorSpace = THREE.SRGBColorSpace;
+
+            // 车身使用 Base 贴图保留各部件正确颜色，color 作为叠加色调
+            sharedBodyMaterial = new THREE.MeshPhysicalMaterial({
+                map: base,
+                // 铝银色：低粗糙度金属 + 强清漆层 = 效果图的高反光银色漆
+                roughness: 0.21,
+                metalness: 0.85,
+                envMapIntensity: 0.1,
+                clearcoat: 0.53,
+                clearcoatRoughness: 0,
+                // 轻微偏冷银色，与效果图的铝银漆吻合
+                color: new THREE.Color(0xfafcff)
+            });
+
+            initWorkspaceControls(sharedBodyMaterial);
+            return sharedBodyMaterial;
+        }
+
+        // --- 玻璃 ---
+        if (isTransparent) {
+            if (sharedGlassMaterial) return sharedGlassMaterial;
+
+            sharedGlassMaterial = new THREE.MeshPhysicalMaterial({
+                color: new THREE.Color(0x050505),
+                roughness: 0.0,
+                metalness: 0.15,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.0,
+                envMapIntensity: 4.7,
+                transparent: true,
+                opacity: 0.72,
+            });
+            sharedGlassMaterial.envMapIntensity = parseFloat(document.getElementById('ctrl-glass-env').value);
+            sharedGlassMaterial.opacity         = parseFloat(document.getElementById('ctrl-glass-opacity').value);
+            sharedGlassMaterial.roughness       = parseFloat(document.getElementById('ctrl-glass-roughness').value);
+
+            // 工作区绑定：全部玻璃共用同一材质，修改立刻全部生效
+            document.getElementById('ctrl-glass-env').addEventListener('input', e => {
+                sharedGlassMaterial.envMapIntensity = parseFloat(e.target.value);
+                document.getElementById('val-glass-env').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-glass-opacity').addEventListener('input', e => {
+                sharedGlassMaterial.opacity = parseFloat(e.target.value);
+                document.getElementById('val-glass-opacity').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-glass-roughness').addEventListener('input', e => {
+                sharedGlassMaterial.roughness = parseFloat(e.target.value);
+                document.getElementById('val-glass-roughness').innerText = e.target.value;
+            });
+
+            return sharedGlassMaterial;
+        }
+
+        // --- 前灯玻璃 ---
+        if (name === '__frontLampGlass__') {
+            if (sharedFrontLampGlassMat) return sharedFrontLampGlassMat;
+            sharedFrontLampGlassMat = new THREE.MeshPhysicalMaterial({
+                color: new THREE.Color(0x111111),
+                roughness: 0.05,
+                metalness: 0.1,
+                envMapIntensity: 2.0,
+                emissive: new THREE.Color(0xffffff),
+                emissiveIntensity: 1.0,
+                transparent: true,
+                opacity: 0.25,
+            });
+            sharedFrontLampGlassMat.opacity           = parseFloat(document.getElementById('ctrl-flg-opacity').value);
+            sharedFrontLampGlassMat.roughness         = parseFloat(document.getElementById('ctrl-flg-roughness').value);
+            sharedFrontLampGlassMat.emissive.set(document.getElementById('ctrl-flg-emissive').value);
+            sharedFrontLampGlassMat.emissiveIntensity = parseFloat(document.getElementById('ctrl-flg-emissive-int').value);
+            sharedFrontLampGlassMat.envMapIntensity   = parseFloat(document.getElementById('ctrl-flg-env').value);
+            document.getElementById('ctrl-flg-opacity').addEventListener('input', e => {
+                sharedFrontLampGlassMat.opacity = parseFloat(e.target.value);
+                document.getElementById('val-flg-opacity').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-flg-roughness').addEventListener('input', e => {
+                sharedFrontLampGlassMat.roughness = parseFloat(e.target.value);
+                document.getElementById('val-flg-roughness').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-flg-emissive').addEventListener('input', e => {
+                sharedFrontLampGlassMat.emissive.set(e.target.value);
+                document.getElementById('val-flg-emissive').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-flg-emissive-int').addEventListener('input', e => {
+                sharedFrontLampGlassMat.emissiveIntensity = parseFloat(e.target.value);
+                document.getElementById('val-flg-emissive-int').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-flg-env').addEventListener('input', e => {
+                sharedFrontLampGlassMat.envMapIntensity = parseFloat(e.target.value);
+                document.getElementById('val-flg-env').innerText = e.target.value;
+            });
+            return sharedFrontLampGlassMat;
+        }
+
+        // --- 后灯玻璃 ---
+        if (name === '__rearLampGlass__') {
+            if (sharedRearLampGlassMat) return sharedRearLampGlassMat;
+            sharedRearLampGlassMat = new THREE.MeshPhysicalMaterial({
+                color: new THREE.Color(0x111111),
+                roughness: 0.05,
+                metalness: 0.1,
+                envMapIntensity: 2.0,
+                emissive: new THREE.Color(0xff2020),
+                emissiveIntensity: 0,
+                transparent: true,
+                opacity: 0.25,
+            });
+            sharedRearLampGlassMat.opacity           = parseFloat(document.getElementById('ctrl-rlg-opacity').value);
+            sharedRearLampGlassMat.roughness         = parseFloat(document.getElementById('ctrl-rlg-roughness').value);
+            sharedRearLampGlassMat.emissive.set(document.getElementById('ctrl-rlg-emissive').value);
+            sharedRearLampGlassMat.emissiveIntensity = parseFloat(document.getElementById('ctrl-rlg-emissive-int').value);
+            sharedRearLampGlassMat.envMapIntensity   = parseFloat(document.getElementById('ctrl-rlg-env').value);
+            document.getElementById('ctrl-rlg-opacity').addEventListener('input', e => {
+                sharedRearLampGlassMat.opacity = parseFloat(e.target.value);
+                document.getElementById('val-rlg-opacity').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-rlg-roughness').addEventListener('input', e => {
+                sharedRearLampGlassMat.roughness = parseFloat(e.target.value);
+                document.getElementById('val-rlg-roughness').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-rlg-emissive').addEventListener('input', e => {
+                sharedRearLampGlassMat.emissive.set(e.target.value);
+                document.getElementById('val-rlg-emissive').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-rlg-emissive-int').addEventListener('input', e => {
+                sharedRearLampGlassMat.emissiveIntensity = parseFloat(e.target.value);
+                document.getElementById('val-rlg-emissive-int').innerText = e.target.value;
+            });
+            document.getElementById('ctrl-rlg-env').addEventListener('input', e => {
+                sharedRearLampGlassMat.envMapIntensity = parseFloat(e.target.value);
+                document.getElementById('val-rlg-env').innerText = e.target.value;
+            });
+            return sharedRearLampGlassMat;
+        }
+
+        // --- 轮毂：只用 Base 贴图，无需 ORM/Normal ---
+        if (name.includes("Wheel")) {
+            const base = texLoader.load(`texture/Tex_Wheel_Base.jpg`);
+            base.flipY = false;
+            base.colorSpace = THREE.SRGBColorSpace;
+            return new THREE.MeshStandardMaterial({
+                map: base,
+                roughness: 0.45,
+                metalness: 0.9,
+                envMapIntensity: 1.2
+            });
+        }
+
+        // --- 刹车卡钳 ---
+        if (name.toLowerCase().includes("caliper")) {
+            return new THREE.MeshStandardMaterial({
+                color: new THREE.Color(0xff6600),
+                roughness: 0.2,
+                metalness: 0.8
+            });
+        }
+
+        // --- 内饰 (Seat / IP / Int) ---
+        if (name.includes("Seat") || name.includes("IP") || name.includes("Int")) {
+            const base = texLoader.load(`texture/Tex_${texMapName}_Base.jpg`);
+            base.flipY = false;
+            base.colorSpace = THREE.SRGBColorSpace;
+            return new THREE.MeshStandardMaterial({ map: base, roughness: 0.9, metalness: 0.0 });
+        }
+
+        // --- 默认 ---
+        const base = texLoader.load(`texture/Tex_${texMapName}_Base.jpg`);
+        base.flipY = false;
+        base.colorSpace = THREE.SRGBColorSpace;
+        return new THREE.MeshStandardMaterial({ map: base, roughness: 0.7 });
+    }
+
+    new GLTFLoader(loadingManager).load("p7i.glb", (gltf) => {
+        gltf.scene.traverse(child => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                const n = child.name;
+                
+                // --- 材质识别逻辑 ---
+                if (n.includes("Body") || n.includes("Door")) {
+                    child.material = loadPBR(n);
+                } else if (n.toLowerCase().includes("caliper")) {
+                    child.material = loadPBR("caliper");
+                } else if (n.includes("Glass")) {
+                    const nl = n.toLowerCase();
+                    console.log('[Glass mesh]', n);
+                    const isRearLampGlass = nl.includes('tail') || nl.includes('rear') || nl.includes('back');
+                    const isFrontLampGlass = !isRearLampGlass && (nl.includes('front') || nl.includes('head'));
+                    if (isFrontLampGlass) {
+                        child.material = loadPBR('__frontLampGlass__');
+                    } else if (isRearLampGlass) {
+                        child.material = loadPBR('__rearLampGlass__');
+                    } else {
+                        child.material = loadPBR("Glass", true);
+                    }
+                } else if (n.includes("Seat") || n.includes("IP") || n.includes("Int")) {
+                    child.material = loadPBR(n.includes("Seat") ? "Seat" : n.includes("IP") ? "IP" : "Int");
+                } else if (n.includes("Wheel")) {
+                    child.material = loadPBR(n);
+                } 
+            // --- 灯光：只用 Base 贴图 + 发光，去掉 ORM/Normal 贴图开销 ---
+else if (n.includes("Lamp")) {
+    const lBase = texLoader.load(`texture/Tex_Lamps_Base.jpg`);
+    lBase.flipY = false;
+    lBase.colorSpace = THREE.SRGBColorSpace;
+    const isRear = n.toLowerCase().includes('tail') ||
+                   n.toLowerCase().includes('rear') ||
+                   n.toLowerCase().includes('back');
+    child.material = new THREE.MeshStandardMaterial({
+        map: lBase,
+        roughness: 0.15,
+        metalness: 0.5,
+        envMapIntensity: 1.5,
+        emissive: isRear ? new THREE.Color(0xff2020) : new THREE.Color(0xffffff),
+        emissiveIntensity: isRear ? 0 : 3,
+    });
+}
+
+        }
+    });
+        scene.add(gltf.scene);
+        
+        });
+
+    // --- 修复点 3 & 4：解决挤压变形与分屏构图偏移 ---
+    // 监听分屏切换事件，彻底解决挤压问题 [cite: 2026-03-30]
+// 监听分屏切换事件，处理运镜
+let _camTween = null;
+window.addEventListener('app-state-change', (e) => {
+    const snap = e.detail && e.detail.snap || 'state-a';
+    if (snap === 'state-c') return;
+
+    // 根据吸附位置选择目标相机参数
+    const camTargets = {
+        'state-a': { dist: 11.3, elev: 1.5, az: 126 },
+        'center':  { dist: 21.1, elev: 14.5, az: 142 },
+        'right':   { dist: 12.8, elev: 5.5, az: 126 },
+    };
+    const target = camTargets[snap] || camTargets['state-a'];
+
+    // 终止之前未完成的运镜
+    if (_camTween) _camTween.kill();
+
+    // 读取当前滑块值作为起点
+    const cur = { dist: readCraneSliders().dist, elev: readCraneSliders().elev, az: readCraneSliders().az };
+    _camTween = gsap.to(cur, {
+        dist: target.dist, elev: target.elev, az: target.az,
+        duration: 0.8, ease: "power2.inOut",
+        onUpdate() {
+            applyCraneCamera(cur.dist, cur.elev, cur.az);
+            document.getElementById('ctrl-distance').value = cur.dist.toFixed(1);
+            document.getElementById('val-distance').innerText = cur.dist.toFixed(1);
+            document.getElementById('ctrl-elevation').value = cur.elev.toFixed(1);
+            document.getElementById('val-elevation').innerText = cur.elev.toFixed(1) + '°';
+            document.getElementById('ctrl-azimuth').value = cur.az.toFixed(0);
+            document.getElementById('val-azimuth').innerText = cur.az.toFixed(0) + '°';
+        },
+        onComplete() { _camTween = null; }
+    });
+});
+
+    // 交互点击（仅精确点击响应，拖拽不触发）
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let _clickDownX = 0, _clickDownY = 0;
+    threeCanvas.addEventListener('pointerdown', (e) => {
+        _clickDownX = e.clientX;
+        _clickDownY = e.clientY;
+    });
+    window.addEventListener("click", (event) => {
+        const dx = event.clientX - _clickDownX;
+        const dy = event.clientY - _clickDownY;
+        if (dx * dx + dy * dy > 25) return; // 移动超过 5px → 判定为拖拽，忽略
+        const rect = threeCanvas.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(scene.children, true);
+        if (intersects.length > 0) {
+            let obj = intersects[0].object;
+            while (obj) {
+                if (obj.name.startsWith("Door_")) {
+                    const isOpen = obj.userData.isOpen || false;
+                    const angle = obj.name.includes("_L") ? -0.85 : 0.85;
+                    gsap.to(obj.rotation, { y: isOpen ? 0 : angle, duration: 1.2, ease: "power2.inOut" });
+                    obj.userData.isOpen = !isOpen; break;
+                }
+                obj = obj.parent;
+            }
+        }
+    });
+// 获取包裹画布的精确容器
+const sceneContainer = document.getElementById('three-js-canvas-container');
+let _skipRendererResize = false;
+let _lastRenderW = 0, _lastRenderH = 0;
+
+function _syncRendererSize() {
+    const w = sceneContainer.offsetWidth;
+    const h = sceneContainer.offsetHeight;
+    if (w > 0 && h > 0 && (w !== _lastRenderW || h !== _lastRenderH)) {
+        renderer.setSize(w, h, true);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        _lastRenderW = w;
+        _lastRenderH = h;
+    }
+}
+window.addEventListener('resize', _syncRendererSize);
+
+function animate() {
+        requestAnimationFrame(animate);
+    if (!_skipRendererResize) {
+        _syncRendererSize();
+    }
+        ground.visible = false;         // 【核心修复】：在捕捉阴影前，让真正的地面隐身！防止它被当成障碍物算进深度图
+        shadowPlane.visible = false;    // 同时也让新的阴影平面隐身
+        shadowHelper.update(); // 此时相机里只有干干净净的车
+        ground.visible = true;  // 捕捉完毕，立刻让地面恢复显示
+        shadowPlane.visible = true;
+        
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
