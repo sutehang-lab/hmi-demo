@@ -26,8 +26,7 @@
             width: 1920px;
             height: 1080px;
             transform-origin: center;
-            /* Auto-scale the whole 1920x1080 wrapper to fit window */
-            transform: scale(min(calc(100vw / 1920), calc(100vh / 1080)));
+            /* transform set by JS syncScale() to fill viewport independently on X/Y */
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
             border-radius: 12px;
             overflow: hidden;
@@ -723,6 +722,23 @@
     z-index: -1; /* 确保在 UI 图片下方 */
     pointer-events: auto; /* 允许 3D 场景接收点击/旋转事件 */
 }
+/* --- Fullscreen Button --- */
+#fullscreen-btn {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    z-index: 999999;
+    transition: background 0.2s, transform 0.2s;
+    border: none;
+    padding: 0;
+}
+#fullscreen-btn:hover { background: rgba(255, 255, 255, 0.75); transform: scale(1.3); }
+
 /* --- Loading Screen 样式 --- */
 #loading-screen {
     position: fixed;
@@ -2802,6 +2818,27 @@ function animate() {
         renderer.render(scene, camera);
     }
     animate();
+</script>
+<button id="fullscreen-btn" title="全屏"></button>
+<script>
+    const _wrapper = document.querySelector('.app-wrapper');
+
+    function syncScale() {
+        const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        _wrapper.style.transform = `scale(${s})`;
+    }
+
+    syncScale();
+    window.addEventListener('resize', syncScale);
+    document.addEventListener('fullscreenchange', syncScale);
+
+    document.getElementById('fullscreen-btn').addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+    });
 </script>
 </body>
 </html>
